@@ -192,6 +192,17 @@ foreach ($shiftRows as $sr) {
     $allShifts[$sr['branch_id']][$sr['shift_number']] = $sr;
 }
 
+// جلب موظفي كل فرع لأزرار واتساب
+$branchEmployees = [];
+$empRows = db()->query("SELECT id, name, phone, pin, branch_id FROM employees WHERE is_active = 1 AND deleted_at IS NULL ORDER BY branch_id, name")->fetchAll();
+foreach ($empRows as $emp) {
+    $branchEmployees[$emp['branch_id']][] = [
+        'name'  => $emp['name'],
+        'phone' => preg_replace('/[^0-9]/', '', $emp['phone']),
+        'pin'   => $emp['pin'],
+    ];
+}
+
 $csrf = generateCsrfToken();
 
 require_once __DIR__ . '/../includes/admin_layout.php';
@@ -559,6 +570,9 @@ function openBulkEditModal() {
             </div>
             <div class="bc-actions">
                 <a class="btn btn-secondary btn-sm" href="branch-edit.php?id=<?= (int)$b['id'] ?>">تعديل</a>
+                <?php $bEmps = $branchEmployees[$b['id']] ?? []; if (!empty($bEmps)): ?>
+                <button type="button" class="btn btn-sm" style="background:#25D366;color:#fff;border:none" onclick='openWhatsAppLinks(<?= htmlspecialchars(json_encode($bEmps, JSON_UNESCAPED_UNICODE), ENT_QUOTES, "UTF-8") ?>)'>📱 واتساب (<?= count($bEmps) ?>)</button>
+                <?php endif; ?>
                 <form method="POST" style="display:inline">
                     <input type="hidden" name="csrf_token" value="<?= $csrf ?>">
                     <input type="hidden" name="action" value="toggle">
@@ -794,6 +808,17 @@ function openBulkEditModal() {
 
     function closeModal(id) {
         document.getElementById(id).classList.remove('show');
+    }
+
+    function openWhatsAppLinks(employees) {
+        if (!employees || !employees.length) return;
+        if (!confirm('سيتم فتح ' + employees.length + ' نافذة واتساب. هل تريد المتابعة؟')) return;
+        const siteUrl = <?= json_encode(SITE_URL) ?>;
+        employees.forEach(function(emp, i) {
+            const msg = 'مرحباً ' + emp.name + '\n\nرابط تسجيل الحضور:\n' + siteUrl + '/employee/\n\nرمز الدخول (PIN): ' + emp.pin + '\n\nافتح الرابط وأدخل الرمز للتسجيل.';
+            const url = 'https://api.whatsapp.com/send/?phone=' + emp.phone + '&text=' + encodeURIComponent(msg) + '&type=phone_number&app_absent=0';
+            setTimeout(function() { window.open(url, '_blank'); }, i * 800);
+        });
     }
 
     // خريطة الإضافة
