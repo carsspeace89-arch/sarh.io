@@ -149,31 +149,17 @@ function recordAttendance(int $employeeId, string $type, float $lat, float $lon,
     // حساب دقائق التأخير (عند تسجيل الدخول فقط)
     $lateMinutes = 0;
     if ($type === 'in') {
-        // جلب فرع الموظف لمعرفة وقت بداية الدوام
         $empStmt = db()->prepare("SELECT branch_id FROM employees WHERE id = ?");
         $empStmt->execute([$employeeId]);
         $emp = $empStmt->fetch();
         $schedule = getBranchSchedule($emp['branch_id'] ?? null);
         $now = time();
 
-        // تحديد مرجع حساب التأخير: إذا توجد استراحة والوقت الحالي بعد نهاية الاستراحة
-        // يُحسب التأخير من break_end بدلاً من work_start
         $referenceTimeStr = $schedule['work_start_time'];
-        if (!empty($schedule['break_start']) && !empty($schedule['break_end'])) {
-            $breakEnd = strtotime(date('Y-m-d') . ' ' . $schedule['break_end']);
-            $breakStart = strtotime(date('Y-m-d') . ' ' . $schedule['break_start']);
-            // Handle midnight crossing for break_end
-            if ($breakEnd < $breakStart) {
-                $breakEnd = strtotime(date('Y-m-d', strtotime('+1 day')) . ' ' . $schedule['break_end']);
-            }
-            if ($now >= $breakStart) {
-                $referenceTimeStr = $schedule['break_end'];
-            }
-        }
 
         $workStart = strtotime(date('Y-m-d') . ' ' . $referenceTimeStr);
-        // Handle midnight crossing: if work starts late evening and we're after midnight
-        if ($workStart > $now + 43200) { // 12 hours offset means midnight crossing
+        // Handle midnight crossing
+        if ($workStart > $now + 43200) {
             $workStart = strtotime(date('Y-m-d', strtotime('-1 day')) . ' ' . $referenceTimeStr);
         }
         if ($now > $workStart) {
@@ -340,155 +326,79 @@ function timeToMinutes(string $time): int {
 }
 
 /**
- * كشف الوردية الحالية بناءً على الوقت
- * @return int 1 أو 2
+ * كشف الوردية النشطة من قائمة ورديات الفرع حسب الوقت الحالي
+ * نافذة تسجيل الحضور = shift_start - 60 دقيقة حتى shift_end
  */
-function detectCurrentShift(array $s1, array $s2): int {
-    $now = new DateTime();
-    $nowMin = (int)$now->format('H') * 60 + (int)$now->format('i');
-
-    $s2CiStart = timeToMinutes($s2['check_in_start_time']);
-    $s2CoEnd   = timeToMinutes($s2['check_out_end_time']);
-    $s1CiStart = timeToMinutes($s1['check_in_start_time']);
-    $s1CoEnd   = timeToMinutes($s1['check_out_end_time']);
-
-    // Shift 2 crosses midnight (e.g. 19:00 → 00:00)
-    if ($s2CoEnd <= $s2CiStart) {
-        if ($nowMin >= $s2CiStart || $nowMin <= $s2CoEnd + 180) {
-            return 2;
-        }
-    } else {
-        if ($nowMin >= $s2CiStart && $nowMin <= $s2CoEnd + 180) {
-            return 2;
+function detectActiveShift(array $shifts): ?array {
+    $nowMin = (int)date('H') * 60 + (int)date('i');
+    foreach ($shifts as $s) {
+        $start = timeToMinutes($s['shift_start']);
+        $end   = timeToMinutes($s['shift_end']);
+        $early = ($start - 60 + 1440) % 1440; // ساعة قبل البداية
+        if ($end < $early) {
+            // يعبر منتصف الليل
+            if ($nowMin >= $early || $nowMin <= $end) return $s;
+        } else {
+            if ($nowMin >= $early && $nowMin <= $end) return $s;
         }
     }
-
-    // Shift 1 window (with 2h overtime buffer)
-    if ($nowMin >= $s1CiStart && $nowMin <= $s1CoEnd + 120) {
-        return 1;
+    // لا وردية نشطة — أعد الأقرب
+    $best = null;
+    $bestDist = 9999;
+    foreach ($shifts as $s) {
+        $start = timeToMinutes($s['shift_start']);
+        $dist = ($start - $nowMin + 1440) % 1440;
+        if ($dist < $bestDist) { $bestDist = $dist; $best = $s; }
     }
-
-    // Between shifts — pick nearest upcoming
-    $distS1 = ($s1CiStart - $nowMin + 1440) % 1440;
-    $distS2 = ($s2CiStart - $nowMin + 1440) % 1440;
-    return $distS2 < $distS1 ? 2 : 1;
+    return $best ?: $shifts[0];
 }
 
 /**
- * كشف الوردية بناءً على وقت تسجيل دخول الموظف
- * (يستخدمه سكربت auto-checkout)
- */
-function detectShiftByCheckinTime(string $checkinTimestamp, array $s1, array $s2): int {
-    $ci = new DateTime($checkinTimestamp);
-    $ciMin = (int)$ci->format('H') * 60 + (int)$ci->format('i');
-
-    $s1CiStart = timeToMinutes($s1['check_in_start_time']);
-    $s1CiEnd   = timeToMinutes($s1['check_in_end_time']);
-    $s2CiStart = timeToMinutes($s2['check_in_start_time']);
-    $s2CiEnd   = timeToMinutes($s2['check_in_end_time']);
-
-    // In shift 1 window?
-    if ($ciMin >= $s1CiStart && $ciMin <= $s1CiEnd + 60) {
-        return 1;
-    }
-    // In shift 2 window?
-    if ($s2CiEnd < $s2CiStart) {
-        if ($ciMin >= $s2CiStart || $ciMin <= $s2CiEnd + 60) return 2;
-    } else {
-        if ($ciMin >= $s2CiStart && $ciMin <= $s2CiEnd + 60) return 2;
-    }
-    return 1; // default
-}
-
-/**
- * جلب مواعيد الفرع أو الإعدادات العامة (مع كشف تلقائي للوردية)
- * @param int|null $branchId معرف الفرع
- * @return array مواعيد العمل
+ * جلب مواعيد الفرع من جدول الورديات (branch_shifts)
+ * يكتشف الوردية النشطة تلقائياً حسب الوقت
  */
 function getBranchSchedule(?int $branchId = null): array {
-    $defaults = loadAllSettings();
-
-    // ── Shift 1 (from branch or settings) ──
-    $shift1 = [
-        'work_start_time'      => $defaults['work_start_time']      ?? '12:00',
-        'work_end_time'        => $defaults['work_end_time']        ?? '15:30',
-        'check_in_start_time'  => $defaults['check_in_start_time']  ?? '11:00',
-        'check_in_end_time'    => $defaults['check_in_end_time']    ?? '14:00',
-        'check_out_start_time' => $defaults['check_out_start_time'] ?? '15:00',
-        'check_out_end_time'   => $defaults['check_out_end_time']   ?? '15:30',
+    $defaults = [
+        'allow_overtime'       => true,
+        'overtime_start_after' => 60,
+        'overtime_min_duration'=> 30,
     ];
 
-    // ── Common settings ──
-    $common = [
-        'checkout_show_before' => (int)($defaults['checkout_show_before'] ?? 0),
-        'allow_overtime'       => ($defaults['allow_overtime'] ?? '1') === '1',
-        'overtime_start_after' => (int)($defaults['overtime_start_after'] ?? 60),
-        'overtime_min_duration'=> (int)($defaults['overtime_min_duration'] ?? 30),
-    ];
-
-    // ── Break defaults (null = no break) ──
-    $breakInfo = [
-        'break_start' => null,
-        'break_end'   => null,
-    ];
-
-    // ── Branch overrides ──
-    $branchFound = false;
     if ($branchId) {
-        $stmt = db()->prepare("SELECT work_start_time, work_end_time, check_in_start_time, check_in_end_time,
-            check_out_start_time, check_out_end_time, checkout_show_before,
-            allow_overtime, overtime_start_after, overtime_min_duration,
-            break_start, break_end
-            FROM branches WHERE id = ? AND is_active = 1");
+        // جلب ورديات الفرع
+        $stmt = db()->prepare("SELECT shift_number, shift_start, shift_end FROM branch_shifts WHERE branch_id = ? AND is_active = 1 ORDER BY shift_number ASC");
         $stmt->execute([$branchId]);
-        $branch = $stmt->fetch();
-        if ($branch) {
-            $branchFound = true;
-            $shift1['work_start_time']      = $branch['work_start_time'];
-            $shift1['work_end_time']        = $branch['work_end_time'];
-            $shift1['check_in_start_time']  = $branch['check_in_start_time'];
-            $shift1['check_in_end_time']    = $branch['check_in_end_time'];
-            $shift1['check_out_start_time'] = $branch['check_out_start_time'];
-            $shift1['check_out_end_time']   = $branch['check_out_end_time'];
-            $common['checkout_show_before'] = (int)$branch['checkout_show_before'];
-            $common['allow_overtime']       = (bool)$branch['allow_overtime'];
-            $common['overtime_start_after'] = (int)$branch['overtime_start_after'];
-            $common['overtime_min_duration']= (int)$branch['overtime_min_duration'];
-            if (!empty($branch['break_start']) && !empty($branch['break_end'])) {
-                $breakInfo['break_start'] = $branch['break_start'];
-                $breakInfo['break_end']   = $branch['break_end'];
-            }
+        $shifts = $stmt->fetchAll();
+
+        // جلب إعدادات الدوام الإضافي من الفرع
+        $brStmt = db()->prepare("SELECT allow_overtime, overtime_start_after, overtime_min_duration FROM branches WHERE id = ? AND is_active = 1");
+        $brStmt->execute([$branchId]);
+        $brData = $brStmt->fetch();
+
+        if ($shifts) {
+            $active = detectActiveShift($shifts);
+            return [
+                'work_start_time'      => $active['shift_start'],
+                'work_end_time'        => $active['shift_end'],
+                'current_shift'        => (int)$active['shift_number'],
+                'shifts'               => $shifts,
+                'allow_overtime'       => $brData ? (bool)$brData['allow_overtime'] : true,
+                'overtime_start_after' => $brData ? (int)$brData['overtime_start_after'] : 60,
+                'overtime_min_duration'=> $brData ? (int)$brData['overtime_min_duration'] : 30,
+            ];
         }
     }
 
-    // ── If branch has its own times, use them directly (no dual-shift detection) ──
-    if ($branchFound) {
-        return array_merge($shift1, $common, $breakInfo, [
-            'current_shift' => 1,
-            'shift1' => $shift1,
-            'shift2' => $shift1, // branch times are the single source of truth
-        ]);
-    }
-
-    // ── Shift 2 (from settings, global — only used when NO branch override) ──
-    $shift2 = [
-        'work_start_time'      => $defaults['work_start_time_2']      ?? '20:00',
-        'work_end_time'        => $defaults['work_end_time_2']        ?? '00:00',
-        'check_in_start_time'  => $defaults['check_in_start_time_2']  ?? '19:00',
-        'check_in_end_time'    => $defaults['check_in_end_time_2']    ?? '22:00',
-        'check_out_start_time' => $defaults['check_out_start_time_2'] ?? '23:30',
-        'check_out_end_time'   => $defaults['check_out_end_time_2']   ?? '00:00',
+    // افتراضي
+    return [
+        'work_start_time'      => '12:00',
+        'work_end_time'        => '16:00',
+        'current_shift'        => 1,
+        'shifts'               => [['shift_number' => 1, 'shift_start' => '12:00', 'shift_end' => '16:00']],
+        'allow_overtime'       => true,
+        'overtime_start_after' => 60,
+        'overtime_min_duration'=> 30,
     ];
-
-    // ── Auto-detect current shift (only for global/no-branch fallback) ──
-    $currentShift = detectCurrentShift($shift1, $shift2);
-    $active = $currentShift === 2 ? $shift2 : $shift1;
-
-    return array_merge($active, $common, $breakInfo, [
-        'current_shift' => $currentShift,
-        'shift1' => $shift1,
-        'shift2' => $shift2,
-    ]);
 }
 
 /**

@@ -29,13 +29,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if ($action === 'save_time') {
-            setSystemSetting('work_start_time',       sanitize($_POST['work_start_time'] ?? '08:00'));
+            setSystemSetting('work_start_time',       sanitize($_POST['work_start_time'] ?? '12:00'));
             setSystemSetting('work_end_time',         sanitize($_POST['work_end_time'] ?? '16:00'));
-            setSystemSetting('check_in_start_time',   sanitize($_POST['check_in_start']  ?? '07:00'));
-            setSystemSetting('check_in_end_time',     sanitize($_POST['check_in_end']    ?? '10:00'));
-            setSystemSetting('check_out_start_time',  sanitize($_POST['check_out_start'] ?? '15:00'));
-            setSystemSetting('check_out_end_time',    sanitize($_POST['check_out_end']   ?? '20:00'));
-            setSystemSetting('checkout_show_before',  sanitize($_POST['checkout_show_before'] ?? '30'));
             $message = 'تم حفظ إعدادات أوقات الدوام'; $msgType = 'success';
         }
 
@@ -132,12 +127,6 @@ $radius    = getSystemSetting('geofence_radius',     '500');
 
 $workStart = getSystemSetting('work_start_time',     '08:00');
 $workEnd   = getSystemSetting('work_end_time',       '16:00');
-$ciStart   = getSystemSetting('check_in_start_time', '07:00');
-$ciEnd     = getSystemSetting('check_in_end_time',   '10:00');
-$coStart   = getSystemSetting('check_out_start_time','15:00');
-$coEnd     = getSystemSetting('check_out_end_time',  '20:00');
-$coShowBefore = getSystemSetting('checkout_show_before', '30');
-
 $allowOT   = getSystemSetting('allow_overtime',        '1');
 $otAfter   = getSystemSetting('overtime_start_after',  '60');
 $otMinDur  = getSystemSetting('overtime_min_duration', '30');
@@ -355,42 +344,19 @@ require_once __DIR__ . '/../includes/admin_layout.php';
 
             <div class="form-grid-2">
                 <div class="form-group">
-                    <label class="form-label">بداية الدوام الرسمي</label>
+                    <label class="form-label">بداية الدوام الرسمي (افتراضي)</label>
                     <input class="form-control" type="time" name="work_start_time" id="sWS" value="<?= $workStart ?>">
+                    <small style="color:var(--text3)">يُستخدم للموظفين بدون فرع. الفروع تعتمد على الورديات.</small>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">نهاية الدوام الرسمي</label>
+                    <label class="form-label">نهاية الدوام الرسمي (افتراضي)</label>
                     <input class="form-control" type="time" name="work_end_time" id="sWE" value="<?= $workEnd ?>">
                 </div>
             </div>
 
-            <hr style="border-color:var(--border);margin:20px 0">
-
-            <div class="form-grid-2">
-                <div class="form-group">
-                    <label class="form-label">بداية وقت تسجيل الحضور</label>
-                    <input class="form-control" type="time" name="check_in_start" id="sCIS" value="<?= $ciStart ?>">
-                    <small style="color:var(--text3)">أول وقت يُسمح فيه بتسجيل الدخول</small>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">نهاية وقت تسجيل الحضور (متأخر)</label>
-                    <input class="form-control" type="time" name="check_in_end" id="sCIE" value="<?= $ciEnd ?>">
-                    <small style="color:var(--text3)">بعده يُعتبر الموظف متأخراً</small>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">بداية وقت تسجيل الانصراف</label>
-                    <input class="form-control" type="time" name="check_out_start" id="sCOS" value="<?= $coStart ?>">
-                </div>
-                <div class="form-group">
-                    <label class="form-label">نهاية وقت تسجيل الانصراف</label>
-                    <input class="form-control" type="time" name="check_out_end" id="sCOE" value="<?= $coEnd ?>">
-                </div>
-            </div>
-
-            <div class="form-group" style="margin-top:16px">
-                <label class="form-label">إظهار زر الانصراف قبل (دقيقة)</label>
-                <input class="form-control" type="number" name="checkout_show_before" id="sCOShow" value="<?= $coShowBefore ?>" min="0" max="180" style="max-width:200px">
-                <small style="color:var(--text3)">كم دقيقة قبل بداية وقت الانصراف يظهر الزر للموظف</small>
+            <div style="background:linear-gradient(135deg,#EFF6FF,#DBEAFE);border:1px solid #93C5FD;border-radius:8px;padding:10px 14px;margin:16px 0;font-size:.8rem;color:#1E40AF;line-height:1.6">
+                تسجيل الحضور متاح قبل بدء الوردية بساعة وحتى نهايتها. الانصراف يتم تلقائياً عند انتهاء الوردية.<br>
+                لإدارة ورديات كل فرع، استخدم <a href="branches.php" style="color:#1E40AF;font-weight:700">إدارة الفروع</a>.
             </div>
 
             <button type="submit" class="btn btn-primary">حفظ أوقات الدوام</button>

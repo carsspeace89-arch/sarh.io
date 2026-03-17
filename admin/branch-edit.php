@@ -21,26 +21,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $lat      = (float)($_POST['latitude'] ?? 0);
     $lon      = (float)($_POST['longitude'] ?? 0);
     $radius   = (int)($_POST['geofence_radius'] ?? 25);
-    $wsTime   = sanitize($_POST['work_start_time'] ?? '08:00');
-    $weTime   = sanitize($_POST['work_end_time'] ?? '16:00');
-    $ciStart  = sanitize($_POST['check_in_start_time'] ?? '07:00');
-    $ciEnd    = sanitize($_POST['check_in_end_time'] ?? '10:00');
-    $coStart  = sanitize($_POST['check_out_start_time'] ?? '15:00');
-    $coEnd    = sanitize($_POST['check_out_end_time'] ?? '20:00');
-    $coShow   = (int)($_POST['checkout_show_before'] ?? 30);
     $allowOT  = (int)($_POST['allow_overtime'] ?? 1);
     $otAfter  = (int)($_POST['overtime_start_after'] ?? 60);
     $otMin    = (int)($_POST['overtime_min_duration'] ?? 30);
     $active   = (int)($_POST['is_active'] ?? 1);
-    $breakStart = sanitize($_POST['break_start'] ?? '');
-    $breakEnd   = sanitize($_POST['break_end'] ?? '');
 
     if (!$name) {
         header('Location: branch-edit.php?id=' . $branchId . '&msg=' . urlencode('اسم الفرع مطلوب') . '&t=error');
         exit;
     }
 
-    // التحقق من صحة الإحداثيات
     if ($lat < -90 || $lat > 90 || $lon < -180 || $lon > 180) {
         header('Location: branch-edit.php?id=' . $branchId . '&msg=' . urlencode('إحداثيات غير صالحة') . '&t=error');
         exit;
@@ -50,33 +40,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $stmt = db()->prepare("UPDATE branches SET name=?, latitude=?, longitude=?, geofence_radius=?,
-        work_start_time=?, work_end_time=?, check_in_start_time=?, check_in_end_time=?,
-        check_out_start_time=?, check_out_end_time=?, checkout_show_before=?,
-        allow_overtime=?, overtime_start_after=?, overtime_min_duration=?, is_active=?,
-        break_start=?, break_end=?
-        WHERE id=?");
+    $stmt = db()->prepare("UPDATE branches SET name=?, latitude=?, longitude=?, geofence_radius=?, allow_overtime=?, overtime_start_after=?, overtime_min_duration=?, is_active=? WHERE id=?");
+    $stmt->execute([$name, $lat, $lon, $radius, $allowOT, $otAfter, $otMin, $active, $branchId]);
 
-    $stmt->execute([
-        $name,
-        $lat,
-        $lon,
-        $radius,
-        $wsTime,
-        $weTime,
-        $ciStart,
-        $ciEnd,
-        $coStart,
-        $coEnd,
-        $coShow,
-        $allowOT,
-        $otAfter,
-        $otMin,
-        $active,
-        $breakStart ?: null,
-        $breakEnd ?: null,
-        $branchId
-    ]);
+    // تحديث الورديات
+    for ($sn = 1; $sn <= 3; $sn++) {
+        $ss = sanitize($_POST["shift_{$sn}_start"] ?? '');
+        $se = sanitize($_POST["shift_{$sn}_end"] ?? '');
+        if ($ss && $se) {
+            $chk = db()->prepare("SELECT id FROM branch_shifts WHERE branch_id=? AND shift_number=?");
+            $chk->execute([$branchId, $sn]);
+            if ($chk->fetch()) {
+                db()->prepare("UPDATE branch_shifts SET shift_start=?, shift_end=?, is_active=1 WHERE branch_id=? AND shift_number=?")
+                    ->execute([$ss, $se, $branchId, $sn]);
+            } else {
+                db()->prepare("INSERT INTO branch_shifts (branch_id, shift_number, shift_start, shift_end) VALUES (?,?,?,?)")
+                    ->execute([$branchId, $sn, $ss, $se]);
+            }
+        } else {
+            db()->prepare("DELETE FROM branch_shifts WHERE branch_id=? AND shift_number=?")->execute([$branchId, $sn]);
+        }
+    }
 
     header('Location: branches.php?msg=' . urlencode('تم تحديث الفرع «' . $name . '»') . '&t=success');
     exit;
@@ -89,6 +73,14 @@ $branch = $stmt->fetch();
 if (!$branch) {
     header('Location: branches.php?msg=' . urlencode('الفرع غير موجود') . '&t=error');
     exit;
+}
+
+// جلب ورديات الفرع
+$shiftsStmt = db()->prepare("SELECT shift_number, shift_start, shift_end FROM branch_shifts WHERE branch_id = ? AND is_active = 1 ORDER BY shift_number");
+$shiftsStmt->execute([$branchId]);
+$branchShifts = [];
+foreach ($shiftsStmt->fetchAll() as $sr) {
+    $branchShifts[$sr['shift_number']] = $sr;
 }
 
 $pageTitle  = 'تعديل الفرع';
@@ -278,58 +270,38 @@ L.Icon.Default.mergeOptions({
                     </div>
                 </div>
 
-                <div class="form-section">أوقات الدوام
-                    <button type="button" class="btn btn-green btn-sm" onclick="calcOptimal()" style="margin-right:auto;font-size:.72rem;padding:3px 10px">✨ النسب المثالية</button>
+                <div class="form-section">الورديات</div>
+                <div style="background:linear-gradient(135deg,#EFF6FF,#DBEAFE);border:1px solid #93C5FD;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:.8rem;color:#1E40AF;line-height:1.6">
+                    تسجيل الحضور متاح قبل بدء الوردية بساعة وحتى نهايتها. الانصراف يتم تلقائياً عند انتهاء الوردية.
                 </div>
-                <div class="form-row col3">
-                    <div class="form-group">
-                        <label class="form-label">بدء الدوام</label>
-                        <input class="form-control" type="time" name="work_start_time" id="eWS" value="<?= htmlspecialchars($branch['work_start_time']) ?>">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">نهاية الدوام</label>
-                        <input class="form-control" type="time" name="work_end_time" id="eWE" value="<?= htmlspecialchars($branch['work_end_time']) ?>">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">عرض الانصراف قبل (دقيقة)</label>
-                        <input class="form-control" type="number" name="checkout_show_before" id="eCOShow" value="<?= (int)$branch['checkout_show_before'] ?>" min="0">
-                    </div>
-                </div>
-
-                <div class="form-section">نوافذ التسجيل</div>
                 <div class="form-row">
                     <div class="form-group">
-                        <label class="form-label">بدء تسجيل الدخول</label>
-                        <input class="form-control" type="time" name="check_in_start_time" id="eCIS" value="<?= htmlspecialchars($branch['check_in_start_time']) ?>">
+                        <label class="form-label">وردية 1 — بدء *</label>
+                        <input class="form-control" type="time" name="shift_1_start" value="<?= htmlspecialchars($branchShifts[1]['shift_start'] ?? '') ?>" required>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">نهاية تسجيل الدخول</label>
-                        <input class="form-control" type="time" name="check_in_end_time" id="eCIE" value="<?= htmlspecialchars($branch['check_in_end_time']) ?>">
+                        <label class="form-label">وردية 1 — انتهاء *</label>
+                        <input class="form-control" type="time" name="shift_1_end" value="<?= htmlspecialchars($branchShifts[1]['shift_end'] ?? '') ?>" required>
                     </div>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
-                        <label class="form-label">بدء الانصراف</label>
-                        <input class="form-control" type="time" name="check_out_start_time" id="eCOS" value="<?= htmlspecialchars($branch['check_out_start_time']) ?>">
+                        <label class="form-label">وردية 2 — بدء (اختياري)</label>
+                        <input class="form-control" type="time" name="shift_2_start" value="<?= htmlspecialchars($branchShifts[2]['shift_start'] ?? '') ?>">
                     </div>
                     <div class="form-group">
-                        <label class="form-label">نهاية الانصراف</label>
-                        <input class="form-control" type="time" name="check_out_end_time" id="eCOE" value="<?= htmlspecialchars($branch['check_out_end_time']) ?>">
+                        <label class="form-label">وردية 2 — انتهاء</label>
+                        <input class="form-control" type="time" name="shift_2_end" value="<?= htmlspecialchars($branchShifts[2]['shift_end'] ?? '') ?>">
                     </div>
-                </div>
-
-                <div class="form-section">فترة الاستراحة (اختياري)</div>
-                <div style="background:linear-gradient(135deg,#FFFBEB,#FEF3C7);border:1px solid #FCD34D;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:.8rem;color:#92400E;line-height:1.6">
-                    عند تحديد فترة استراحة، سيُسمح للموظفين بتسجيل دخول ثانٍ بعد الاستراحة، ويُحسب التأخير من نهاية الاستراحة بدلاً من بداية الدوام.
                 </div>
                 <div class="form-row">
                     <div class="form-group">
-                        <label class="form-label">بداية الاستراحة</label>
-                        <input class="form-control" type="time" name="break_start" value="<?= htmlspecialchars($branch['break_start'] ?? '') ?>">
+                        <label class="form-label">وردية 3 — بدء (اختياري)</label>
+                        <input class="form-control" type="time" name="shift_3_start" value="<?= htmlspecialchars($branchShifts[3]['shift_start'] ?? '') ?>">
                     </div>
                     <div class="form-group">
-                        <label class="form-label">نهاية الاستراحة</label>
-                        <input class="form-control" type="time" name="break_end" value="<?= htmlspecialchars($branch['break_end'] ?? '') ?>">
+                        <label class="form-label">وردية 3 — انتهاء</label>
+                        <input class="form-control" type="time" name="shift_3_end" value="<?= htmlspecialchars($branchShifts[3]['shift_end'] ?? '') ?>">
                     </div>
                 </div>
 
@@ -430,46 +402,6 @@ L.Icon.Default.mergeOptions({
             },
             { enableHighAccuracy: true, timeout: 10000 }
         );
-    }
-
-    function calcOptimal() {
-        const wsEl = document.getElementById('eWS');
-        const weEl = document.getElementById('eWE');
-        const cisEl = document.getElementById('eCIS');
-        const cieEl = document.getElementById('eCIE');
-        const cosEl = document.getElementById('eCOS');
-        const coeEl = document.getElementById('eCOE');
-        const coShowEl = document.getElementById('eCOShow');
-        const otAfterEl = document.getElementById('eOTAfter');
-        const otMinEl = document.getElementById('eOTMin');
-
-        if (!wsEl.value || !weEl.value) {
-            alert('حدد بدء الدوام ونهايته أولاً');
-            return;
-        }
-
-        function toMin(t) {
-            const p = t.split(':');
-            return parseInt(p[0]) * 60 + parseInt(p[1]);
-        }
-
-        function toTime(m) {
-            m = ((m % 1440) + 1440) % 1440;
-            return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
-        }
-
-        const ws = toMin(wsEl.value);
-        const we = toMin(weEl.value);
-        let duration = we - ws;
-        if (duration <= 0) duration += 1440;
-
-        cisEl.value = toTime(ws - 30);
-        cieEl.value = toTime(ws + 60);
-        coShowEl.value = 15;
-        cosEl.value = toTime(ws + duration - 15);
-        coeEl.value = toTime(ws + duration + 30);
-        otAfterEl.value = 30;
-        otMinEl.value = 30;
     }
 
     function tick() {

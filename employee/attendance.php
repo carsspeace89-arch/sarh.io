@@ -66,7 +66,7 @@ if ($employee) {
   $historyRecords = $stmtH->fetchAll();
 }
 
-$showCheckoutButton = ($todayStatus === 'checked_in');
+$showCheckoutButton = false; // الانصراف تلقائي دائماً
 
 $jsConfig = json_encode([
   'token'          => $token,
@@ -76,7 +76,7 @@ $jsConfig = json_encode([
   'workLon'        => $workLon,
   'geofenceRadius' => $geofenceRadius,
   'workEnd'        => $workEnd,
-  'showCheckout'   => $showCheckoutButton,
+  'showCheckout'   => false,
   'allowOvertime'  => $allowOvertime,
   'branchName'     => $branchName,
 ], JSON_UNESCAPED_UNICODE);
@@ -183,12 +183,9 @@ $badgeClass = $todayStatus === 'checked_in' ? 'in' : ($todayStatus === 'checked_
             <span class="btn-icon">&#x2705;</span>
             <span data-i18n="btn_checkin"></span>
           </button>
-          <button class="btn btn-out <?= $todayStatus !== 'checked_in' ? 'btn-hidden' : '' ?>"
-            id="btnCheckOut" onclick="submitAttendance('out', true)" disabled>
-            <span class="btn-icon">&#x1F6AA;</span>
-            <span data-i18n="btn_checkout"></span>
-          </button>
-          <?php if ($allowOvertime && $todayStatus === 'checked_out'): ?>
+          <?php if ($todayStatus === 'checked_in'): ?>
+            <div class="done-msg" data-i18n="auto_checkout_note">سيتم تسجيل الانصراف تلقائياً عند <?= htmlspecialchars($workEnd) ?></div>
+          <?php elseif ($allowOvertime && $todayStatus === 'checked_out'): ?>
             <button class="btn btn-overtime" id="btnOvertime" onclick="submitAttendance('overtime', true)" disabled>
               <span class="btn-icon">&#x23F0;</span>
               <span data-i18n="btn_overtime"></span>

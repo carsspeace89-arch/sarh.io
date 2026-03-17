@@ -50,14 +50,14 @@ if (!$employee) {
     jsonResponse(['success' => false, 'message' => 'رمز غير صالح أو الموظف غير مفعّل'], 403);
 }
 
-// H2: التحقق من أن التسجيل ضمن وقت الدوام (قبل بدء الدوام بساعة ونصف حتى نهاية الدوام)
+// التحقق من أن التسجيل ضمن نافذة الوردية (قبل بدء الوردية بساعة حتى نهايتها)
 $schedule       = getBranchSchedule($employee['branch_id'] ?? null);
 $workStart      = $schedule['work_start_time'];
 $workEnd        = $schedule['work_end_time'];
 $nowTime        = date('H:i');
 
-// بداية النافذة = work_start - 90 دقيقة
-$earlyStart = date('H:i', strtotime($workStart) - 5400);
+// بداية النافذة = shift_start - 60 دقيقة
+$earlyStart = date('H:i', strtotime($workStart) - 3600);
 
 // التحقق: من earlyStart إلى workEnd
 if ($workEnd < $earlyStart) {
