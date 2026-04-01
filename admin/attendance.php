@@ -28,6 +28,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
     exit;
 }
 
+// =================== تعديل سجل ===================
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_id'])) {
+    header('Content-Type: application/json');
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        echo json_encode(['success' => false, 'message' => 'طلب غير صالح']);
+        exit;
+    }
+    $editId      = (int)$_POST['edit_id'];
+    $editType    = in_array($_POST['edit_type'] ?? '', ['in', 'out']) ? $_POST['edit_type'] : null;
+    $editDate    = $_POST['edit_date'] ?? '';
+    $editTime    = $_POST['edit_time'] ?? '';
+    $editLate    = max(0, (int)($_POST['edit_late'] ?? 0));
+    $editNotes   = trim($_POST['edit_notes'] ?? '');
+
+    if ($editId <= 0 || !$editType || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $editDate) || !preg_match('/^\d{2}:\d{2}$/', $editTime)) {
+        echo json_encode(['success' => false, 'message' => 'بيانات غير صالحة']);
+        exit;
+    }
+
+    $newTimestamp = $editDate . ' ' . $editTime . ':00';
+    $st = db()->prepare("UPDATE attendances SET type = ?, timestamp = ?, attendance_date = ?, late_minutes = ?, notes = ? WHERE id = ?");
+    $st->execute([$editType, $newTimestamp, $editDate, $editLate, $editNotes ?: null, $editId]);
+    auditLog('edit_attendance', "تعديل سجل حضور ID={$editId}: type={$editType}, time={$newTimestamp}, late={$editLate}", $editId);
+    echo json_encode(['success' => true, 'updated' => $st->rowCount()]);
+    exit;
+}
+
+// =================== جلب سجل للتعديل ===================
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['fetch_id'])) {
+    header('Content-Type: application/json');
+    $fetchId = (int)$_GET['fetch_id'];
+    if ($fetchId <= 0) {
+        echo json_encode(['success' => false, 'message' => 'معرف غير صالح']);
+        exit;
+    }
+    $st = db()->prepare("SELECT id, employee_id, type, timestamp, attendance_date, late_minutes, latitude, longitude, notes FROM attendances WHERE id = ?");
+    $st->execute([$fetchId]);
+    $rec = $st->fetch();
+    if (!$rec) {
+        echo json_encode(['success' => false, 'message' => 'السجل غير موجود']);
+        exit;
+    }
+    echo json_encode(['success' => true, 'record' => $rec]);
+    exit;
+}
+
 $pageTitle  = 'تقارير الحضور';
 $activePage = 'attendance';
 
@@ -211,7 +257,7 @@ require_once __DIR__ . '/../includes/admin_layout.php';
     <div style="overflow-x:auto">
     <table class="att-table">
         <thead>
-            <tr><th>#</th><th>الموظف</th><th>الفرع</th><th>النوع</th><th>التاريخ</th><th>الوقت</th><th>الموقع</th><th>الدقة</th><th>حذف</th></tr>
+            <tr><th>#</th><th>الموظف</th><th>الفرع</th><th>النوع</th><th>التاريخ</th><th>الوقت</th><th>التأخير</th><th>الموقع</th><th>إجراءات</th></tr>
         </thead>
         <tbody id="attendanceTableBody">
         <?php if (empty($records)): ?>
@@ -225,9 +271,12 @@ require_once __DIR__ . '/../includes/admin_layout.php';
                 <td><span class="badge <?= $rec['type'] === 'in' ? 'badge-green' : 'badge-red' ?>"><?= $rec['type'] === 'in' ? '▶ دخول' : '◀ انصراف' ?></span></td>
                 <td style="color:var(--text2)"><?= date('Y-m-d', strtotime($rec['timestamp'])) ?></td>
                 <td style="color:var(--primary);font-weight:bold"><?= date('h:i:s A', strtotime($rec['timestamp'])) ?></td>
-                <td><a href="https://maps.google.com/?q=<?= $rec['latitude'] ?>,<?= $rec['longitude'] ?>" target="_blank" class="btn btn-secondary btn-sm" title="عرض على الخريطة">الخريطة</a></td>
-                <td style="color:var(--text3);font-size:.8rem"><?= round($rec['location_accuracy'] ?? 0) ?> م</td>
-                <td><button class="btn btn-danger btn-sm" onclick="deleteRecord(<?= $rec['id'] ?>, this)" title="حذف السجل">🗑️</button></td>
+                <td style="color:<?= ($rec['late_minutes'] ?? 0) > 0 ? '#DC2626' : 'var(--text3)' ?>;font-size:.82rem"><?= ($rec['late_minutes'] ?? 0) > 0 ? $rec['late_minutes'] . ' د' : '-' ?></td>
+                <td><a href="https://maps.google.com/?q=<?= $rec['latitude'] ?>,<?= $rec['longitude'] ?>" target="_blank" class="btn btn-secondary btn-sm" title="عرض على الخريطة">📍</a></td>
+                <td style="white-space:nowrap">
+                    <button class="btn btn-primary btn-sm" onclick="openEditModal(<?= $rec['id'] ?>)" title="تعديل">✏️</button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteRecord(<?= $rec['id'] ?>, this)" title="حذف">🗑️</button>
+                </td>
             </tr>
             <?php endforeach; ?>
         <?php endif; ?>
@@ -254,6 +303,50 @@ require_once __DIR__ . '/../includes/admin_layout.php';
         <?php endfor; ?>
         </div>
     <?php endif; ?>
+    </div>
+</div>
+
+<!-- نافذة تعديل السجل -->
+<div class="modal-overlay" id="editModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center">
+    <div style="background:var(--surface,#fff);border-radius:16px;width:90%;max-width:480px;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden">
+        <div style="background:linear-gradient(135deg,var(--primary),var(--primary-d,#ea580c));padding:16px 24px;color:#fff;display:flex;justify-content:space-between;align-items:center">
+            <h3 style="margin:0;font-size:1.1rem">✏️ تعديل سجل الحضور</h3>
+            <button onclick="closeEditModal()" style="background:none;border:none;color:#fff;font-size:1.4rem;cursor:pointer">&times;</button>
+        </div>
+        <form id="editForm" style="padding:24px;display:flex;flex-direction:column;gap:14px">
+            <input type="hidden" id="editId">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                <div>
+                    <label style="font-size:.82rem;color:var(--text3);display:block;margin-bottom:4px">النوع</label>
+                    <select id="editType" class="form-control" style="width:100%">
+                        <option value="in">▶ دخول</option>
+                        <option value="out">◀ انصراف</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size:.82rem;color:var(--text3);display:block;margin-bottom:4px">التأخير (دقائق)</label>
+                    <input type="number" id="editLate" class="form-control" min="0" value="0" style="width:100%">
+                </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                <div>
+                    <label style="font-size:.82rem;color:var(--text3);display:block;margin-bottom:4px">التاريخ</label>
+                    <input type="date" id="editDate" class="form-control" required style="width:100%">
+                </div>
+                <div>
+                    <label style="font-size:.82rem;color:var(--text3);display:block;margin-bottom:4px">الوقت</label>
+                    <input type="time" id="editTime" class="form-control" required style="width:100%">
+                </div>
+            </div>
+            <div>
+                <label style="font-size:.82rem;color:var(--text3);display:block;margin-bottom:4px">ملاحظات</label>
+                <textarea id="editNotes" class="form-control" rows="2" placeholder="ملاحظات اختيارية..." style="width:100%;resize:vertical"></textarea>
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px">
+                <button type="button" onclick="closeEditModal()" class="btn btn-secondary">إلغاء</button>
+                <button type="submit" class="btn btn-primary" id="editSaveBtn">💾 حفظ التعديلات</button>
+            </div>
+        </form>
     </div>
 </div>
 
@@ -345,7 +438,10 @@ function prependNewRecords(apiRecords) {
             <td style="color:var(--primary);font-weight:bold">${escapeHtml(rec.time)}</td>
             <td><a href="https://maps.google.com/?q=${rec.latitude},${rec.longitude}" target="_blank" class="btn btn-secondary btn-sm" title="عرض على الخريطة">الخريطة</a></td>
             <td style="color:var(--text3);font-size:.8rem">${escapeHtml(rec.accuracy)}</td>
-            <td><button class="btn btn-danger btn-sm" onclick="deleteRecord(${rec.id}, this)" title="حذف السجل">🗑️</button></td>`;
+            <td style="white-space:nowrap">
+                <button class="btn btn-primary btn-sm" onclick="openEditModal(${rec.id})" title="تعديل">✏️</button>
+                <button class="btn btn-danger btn-sm" onclick="deleteRecord(${rec.id}, this)" title="حذف">🗑️</button>
+            </td>`;
         tbody.insertBefore(tr, tbody.firstChild);
     });
 
@@ -430,6 +526,72 @@ async function deleteRecord(id, btn) {
         btn.textContent = '🗑️';
     }
 }
+
+// =================== تعديل سجل ===================
+function openEditModal(id) {
+    const modal = document.getElementById('editModal');
+    modal.style.display = 'flex';
+    document.getElementById('editSaveBtn').disabled = true;
+    document.getElementById('editSaveBtn').textContent = 'جارٍ التحميل...';
+
+    fetch('?fetch_id=' + id, { credentials: 'same-origin' })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) { alert(data.message || 'خطأ'); closeEditModal(); return; }
+            const rec = data.record;
+            document.getElementById('editId').value = rec.id;
+            document.getElementById('editType').value = rec.type;
+            document.getElementById('editDate').value = rec.attendance_date;
+            document.getElementById('editTime').value = rec.timestamp.substring(11, 16);
+            document.getElementById('editLate').value = rec.late_minutes || 0;
+            document.getElementById('editNotes').value = rec.notes || '';
+            document.getElementById('editSaveBtn').disabled = false;
+            document.getElementById('editSaveBtn').textContent = '💾 حفظ التعديلات';
+        })
+        .catch(e => { alert('خطأ: ' + e.message); closeEditModal(); });
+}
+
+function closeEditModal() {
+    document.getElementById('editModal').style.display = 'none';
+}
+
+document.getElementById('editForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const btn = document.getElementById('editSaveBtn');
+    btn.disabled = true;
+    btn.textContent = 'جارٍ الحفظ...';
+
+    try {
+        const fd = new FormData();
+        fd.append('edit_id', document.getElementById('editId').value);
+        fd.append('edit_type', document.getElementById('editType').value);
+        fd.append('edit_date', document.getElementById('editDate').value);
+        fd.append('edit_time', document.getElementById('editTime').value);
+        fd.append('edit_late', document.getElementById('editLate').value);
+        fd.append('edit_notes', document.getElementById('editNotes').value);
+        fd.append('csrf_token', document.getElementById('csrfToken')?.value || '');
+
+        const resp = await fetch('', { method: 'POST', body: fd, credentials: 'same-origin' });
+        const data = await resp.json();
+        if (data.success) {
+            closeEditModal();
+            location.reload();
+        } else {
+            alert(data.message || 'فشل الحفظ');
+            btn.disabled = false;
+            btn.textContent = '💾 حفظ التعديلات';
+        }
+    } catch (e) {
+        alert('خطأ: ' + e.message);
+        btn.disabled = false;
+        btn.textContent = '💾 حفظ التعديلات';
+    }
+});
+
+// إغلاق النافذة بالنقر خارجها
+document.getElementById('editModal').addEventListener('click', function(e) {
+    if (e.target === this) closeEditModal();
+});
 
 // بدء التحديث الدوري
 refreshTimer = setInterval(fetchAttendanceStats, REFRESH_INTERVAL);

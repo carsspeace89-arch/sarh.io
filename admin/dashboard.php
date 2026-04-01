@@ -19,6 +19,55 @@ $today = date('Y-m-d');
 // عدد الفروع
 $branchCount = (int)db()->query("SELECT COUNT(*) FROM branches WHERE is_active = 1")->fetchColumn();
 
+// المتأخرون اليوم
+$lateCount = (int)db()->prepare("
+    SELECT COUNT(DISTINCT employee_id) FROM attendances
+    WHERE attendance_date = ? AND type = 'in' AND late_minutes > 0
+")->execute([$today]) ? 0 : 0;
+$lateStmt = db()->prepare("SELECT COUNT(DISTINCT employee_id) FROM attendances WHERE attendance_date = ? AND type = 'in' AND late_minutes > 0");
+$lateStmt->execute([$today]);
+$lateCount = (int)$lateStmt->fetchColumn();
+
+// الإجازات المعلقة
+$pendingLeaves = 0;
+try { $pendingLeaves = (int)db()->query("SELECT COUNT(*) FROM leaves WHERE status = 'pending'")->fetchColumn(); } catch(PDOException $e) {}
+
+// الإشعارات غير المقروءة
+$unreadNotifs = 0;
+try { $unreadNotifs = (int)db()->query("SELECT COUNT(*) FROM notifications WHERE is_read = 0")->fetchColumn(); } catch(PDOException $e) {}
+
+// الفروع مع إحداثيات للخريطة
+$branchesMap = db()->query("
+    SELECT b.id, b.name, b.latitude, b.longitude, b.geofence_radius,
+           (SELECT COUNT(*) FROM employees e WHERE e.branch_id = b.id AND e.is_active = 1 AND e.deleted_at IS NULL) AS emp_count,
+           (SELECT COUNT(DISTINCT a.employee_id) FROM attendances a JOIN employees e2 ON a.employee_id = e2.id WHERE e2.branch_id = b.id AND a.attendance_date = CURDATE() AND a.type = 'in') AS present_today
+    FROM branches b WHERE b.is_active = 1
+")->fetchAll();
+
+// آخر تسجيلات اليوم مع الإحداثيات (للرادارات الحية)
+$liveCheckins = db()->prepare("
+    SELECT a.latitude, a.longitude, a.type, a.timestamp,
+           e.name AS employee_name, e.branch_id
+    FROM attendances a
+    JOIN employees e ON a.employee_id = e.id
+    WHERE a.attendance_date = ? AND a.type = 'in'
+      AND a.latitude IS NOT NULL AND a.longitude IS NOT NULL
+      AND e.is_active = 1 AND e.deleted_at IS NULL
+    ORDER BY a.timestamp DESC
+")->execute([$today]) ? [] : [];
+$liveStmt = db()->prepare("
+    SELECT a.latitude, a.longitude, a.type, a.timestamp,
+           e.name AS employee_name, e.branch_id
+    FROM attendances a
+    JOIN employees e ON a.employee_id = e.id
+    WHERE a.attendance_date = ? AND a.type = 'in'
+      AND a.latitude IS NOT NULL AND a.longitude IS NOT NULL
+      AND e.is_active = 1 AND e.deleted_at IS NULL
+    ORDER BY a.timestamp DESC
+");
+$liveStmt->execute([$today]);
+$liveCheckins = $liveStmt->fetchAll();
+
 // آخر 15 تسجيل
 $recentStmt = db()->prepare("
     SELECT a.type, a.timestamp, a.latitude, a.longitude,
@@ -89,6 +138,228 @@ require_once __DIR__ . '/../includes/admin_layout.php';
             <div class="stat-label">غائبون اليوم</div>
         </div>
     </div>
+    <div class="stat-card">
+        <div class="stat-icon-wrap" style="background:#FEF3C7;color:#D97706">⏰</div>
+        <div>
+            <div class="stat-value" data-live="late"><?= $lateCount ?></div>
+            <div class="stat-label">متأخرون اليوم</div>
+        </div>
+    </div>
+    <?php if ($pendingLeaves > 0): ?>
+    <div class="stat-card">
+        <div class="stat-icon-wrap" style="background:#EDE9FE;color:#7C3AED">📋</div>
+        <div>
+            <div class="stat-value"><?= $pendingLeaves ?></div>
+            <div class="stat-label"><a href="leaves.php?status=pending" style="color:inherit;text-decoration:none">إجازات معلقة</a></div>
+        </div>
+    </div>
+    <?php endif; ?>
+</div>
+
+<!-- خريطة الفروع — الرادارات الحية -->
+<div class="card" style="margin-bottom:20px">
+    <div class="card-header">
+        <span class="card-title"><span class="card-title-bar"></span> رادارات الفروع — البث المباشر</span>
+        <div class="live-indicator" id="mapLiveIndicator">
+            <span class="live-dot"></span>
+            <span>مباشر</span>
+        </div>
+    </div>
+    <div id="dashboardMap" style="height:420px;border-radius:8px;z-index:1"></div>
+</div>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+/* رادار متحرك */
+@keyframes radarSweep {
+    0%   { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+@keyframes radarPulse {
+    0%   { transform: scale(1); opacity: 0.6; }
+    50%  { transform: scale(1.15); opacity: 0.3; }
+    100% { transform: scale(1); opacity: 0.6; }
+}
+@keyframes empDotPulse {
+    0%, 100% { transform: translate(-50%,-50%) scale(1); }
+    50%      { transform: translate(-50%,-50%) scale(1.4); }
+}
+.radar-marker {
+    position: relative;
+    width: 80px; height: 80px;
+}
+.radar-bg {
+    position: absolute; inset: 0;
+    border-radius: 50%;
+    border: 2px solid rgba(16,185,129,.5);
+    background: radial-gradient(circle, rgba(16,185,129,.15) 0%, rgba(16,185,129,.03) 70%, transparent 100%);
+}
+.radar-bg.warn { border-color: rgba(245,158,11,.5); background: radial-gradient(circle, rgba(245,158,11,.15) 0%, rgba(245,158,11,.03) 70%, transparent 100%); }
+.radar-bg.danger { border-color: rgba(239,68,68,.5); background: radial-gradient(circle, rgba(239,68,68,.15) 0%, rgba(239,68,68,.03) 70%, transparent 100%); }
+.radar-ring {
+    position: absolute; inset: 8px;
+    border-radius: 50%;
+    border: 1px dashed rgba(255,255,255,.2);
+}
+.radar-ring2 {
+    position: absolute; inset: 18px;
+    border-radius: 50%;
+    border: 1px dashed rgba(255,255,255,.12);
+}
+.radar-sweep {
+    position: absolute; top: 50%; left: 50%;
+    width: 50%; height: 2px;
+    transform-origin: 0% 50%;
+    animation: radarSweep 3s linear infinite;
+}
+.radar-sweep::after {
+    content: '';
+    position: absolute; top: -15px; left: 0;
+    width: 100%; height: 30px;
+    background: linear-gradient(90deg, rgba(16,185,129,.5), transparent);
+    border-radius: 0 50% 50% 0;
+}
+.radar-sweep.warn::after { background: linear-gradient(90deg, rgba(245,158,11,.5), transparent); }
+.radar-sweep.danger::after { background: linear-gradient(90deg, rgba(239,68,68,.5), transparent); }
+.radar-cross-h, .radar-cross-v {
+    position: absolute;
+    background: rgba(255,255,255,.08);
+}
+.radar-cross-h { top: 50%; left: 10%; right: 10%; height: 1px; transform: translateY(-50%); }
+.radar-cross-v { left: 50%; top: 10%; bottom: 10%; width: 1px; transform: translateX(-50%); }
+.radar-center {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%,-50%);
+    font-size: 11px; font-weight: 800;
+    color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.7);
+    z-index: 5; white-space: nowrap;
+    text-align: center; line-height: 1.2;
+}
+.radar-emp-dot {
+    position: absolute;
+    width: 6px; height: 6px;
+    background: #60A5FA;
+    border-radius: 50%;
+    border: 1px solid #fff;
+    transform: translate(-50%,-50%);
+    animation: empDotPulse 2s ease-in-out infinite;
+    z-index: 3;
+}
+.radar-outer-pulse {
+    position: absolute; inset: -4px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(16,185,129,.3);
+    animation: radarPulse 2.5s ease-in-out infinite;
+}
+.radar-outer-pulse.warn { border-color: rgba(245,158,11,.3); }
+.radar-outer-pulse.danger { border-color: rgba(239,68,68,.3); }
+</style>
+<script>
+(function(){
+    const map = L.map('dashboardMap', {zoomControl: true}).setView([24.7136, 46.6753], 6);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Esri', maxZoom: 19
+    }).addTo(map);
+
+    const branches = <?= json_encode($branchesMap) ?>;
+    const liveCheckins = <?= json_encode($liveCheckins) ?>;
+
+    branches.forEach(b => {
+        if (!b.latitude || !b.longitude) return;
+        const pct = b.emp_count > 0 ? Math.round((b.present_today / b.emp_count) * 100) : 0;
+        const cls = pct >= 80 ? '' : (pct >= 50 ? 'warn' : 'danger');
+        const color = pct >= 80 ? '#10B981' : (pct >= 50 ? '#F59E0B' : '#EF4444');
+
+        // نطاق الجيوفينس الفعلي
+        const geoRadius = b.geofence_radius || 500;
+        L.circle([b.latitude, b.longitude], {
+            radius: geoRadius,
+            color: color,
+            weight: 1,
+            opacity: 0.4,
+            fillColor: color,
+            fillOpacity: 0.06,
+            dashArray: '6 4'
+        }).addTo(map);
+
+        // الرادار المتحرك
+        const size = 80;
+        const radarIcon = L.divIcon({
+            className: '',
+            iconSize: [size, size],
+            iconAnchor: [size/2, size/2],
+            html: `<div class="radar-marker">
+                <div class="radar-outer-pulse ${cls}"></div>
+                <div class="radar-bg ${cls}"></div>
+                <div class="radar-ring"></div>
+                <div class="radar-ring2"></div>
+                <div class="radar-cross-h"></div>
+                <div class="radar-cross-v"></div>
+                <div class="radar-sweep ${cls}"></div>
+                <div class="radar-center">
+                    <span style="font-size:14px;display:block">${b.present_today}/${b.emp_count}</span>
+                    <span style="font-size:9px;opacity:.8">${pct}%</span>
+                </div>
+            </div>`
+        });
+        const marker = L.marker([b.latitude, b.longitude], {icon: radarIcon}).addTo(map);
+        marker.bindPopup(`<div style="text-align:center;font-family:Tajawal;min-width:150px;padding:4px">
+            <strong style="font-size:1rem">${b.name}</strong><br>
+            <div style="margin:6px 0;padding:6px;background:rgba(0,0,0,.05);border-radius:8px">
+                <span style="color:${color};font-size:1.3rem;font-weight:800">${pct}%</span><br>
+                <small>الحضور: ${b.present_today} من ${b.emp_count}</small>
+            </div>
+            <small style="color:#888">نطاق: ${geoRadius}م</small>
+        </div>`);
+
+        // نقاط الموظفين الحية داخل هذا الفرع
+        const branchCheckins = liveCheckins.filter(c => c.branch_id == b.id);
+        branchCheckins.forEach(c => {
+            L.circleMarker([c.latitude, c.longitude], {
+                radius: 4, fillColor: '#60A5FA', color: '#fff',
+                weight: 1, fillOpacity: 0.9
+            }).addTo(map).bindTooltip(c.employee_name, {
+                direction: 'top', offset: [0, -6],
+                className: 'emp-tooltip'
+            });
+        });
+    });
+
+    if (branches.length > 0) {
+        const bounds = branches.filter(b => b.latitude && b.longitude).map(b => [b.latitude, b.longitude]);
+        if (bounds.length > 0) map.fitBounds(bounds, {padding: [40,40], maxZoom: 14});
+    }
+
+    window._dashMap = map;
+})();
+</script>
+
+<!-- Quick Links -->
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:20px">
+    <a href="report-monthly.php" class="card" style="padding:14px;text-align:center;text-decoration:none;color:var(--text-primary);transition:transform .2s" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
+        <div style="font-size:1.5rem;margin-bottom:4px">📊</div>
+        <div style="font-size:.82rem;font-weight:600">التقرير الشهري</div>
+    </a>
+    <a href="report-absence.php" class="card" style="padding:14px;text-align:center;text-decoration:none;color:var(--text-primary);transition:transform .2s" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
+        <div style="font-size:1.5rem;margin-bottom:4px">❌</div>
+        <div style="font-size:.82rem;font-weight:600">تقرير الغياب</div>
+    </a>
+    <a href="report-branches.php" class="card" style="padding:14px;text-align:center;text-decoration:none;color:var(--text-primary);transition:transform .2s" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
+        <div style="font-size:1.5rem;margin-bottom:4px">🏢</div>
+        <div style="font-size:.82rem;font-weight:600">مقارنة الفروع</div>
+    </a>
+    <a href="notifications.php" class="card" style="padding:14px;text-align:center;text-decoration:none;color:var(--text-primary);transition:transform .2s" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
+        <div style="font-size:1.5rem;margin-bottom:4px">🔔</div>
+        <div style="font-size:.82rem;font-weight:600">الإشعارات<?= $unreadNotifs ? " ({$unreadNotifs})" : '' ?></div>
+    </a>
+    <a href="backups.php" class="card" style="padding:14px;text-align:center;text-decoration:none;color:var(--text-primary);transition:transform .2s" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
+        <div style="font-size:1.5rem;margin-bottom:4px">💾</div>
+        <div style="font-size:.82rem;font-weight:600">النسخ الاحتياطي</div>
+    </a>
+    <a href="employee-transfer.php" class="card" style="padding:14px;text-align:center;text-decoration:none;color:var(--text-primary);transition:transform .2s" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
+        <div style="font-size:1.5rem;margin-bottom:4px">🔄</div>
+        <div style="font-size:.82rem;font-weight:600">نقل الموظفين</div>
+    </a>
 </div>
 
 <div class="dashboard-grid">
@@ -159,19 +430,6 @@ require_once __DIR__ . '/../includes/admin_layout.php';
 </div>
 
 <script>
-    // =================== الساعة ===================
-    function tick(){
-        const el = document.getElementById('topbarClock');
-        if(el) el.textContent = new Date().toLocaleString('ar-SA');
-    }
-    tick(); setInterval(tick,1000);
-
-    function toggleSidebar(){
-        document.getElementById('sidebar').classList.toggle('open');
-        document.getElementById('sidebarOverlay').classList.toggle('show');
-    }
-    document.getElementById('sidebarOverlay')?.addEventListener('click', toggleSidebar);
-
     // =================== التحديث بالوقت الفعلي (جزئي) ===================
     const REFRESH_INTERVAL = 15000;
     let refreshTimer = null;

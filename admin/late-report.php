@@ -58,13 +58,12 @@ $stmt = db()->prepare("
         e.name AS employee_name,
         e.job_title,
         b.name AS branch_name,
-        br.work_start_time,
+        DATE_FORMAT(DATE_SUB(a.timestamp, INTERVAL a.late_minutes MINUTE), '%H:%i') AS work_start_time,
         a.attendance_date,
         a.timestamp AS checkin_time,
         a.late_minutes
     FROM attendances a
     INNER JOIN employees e ON a.employee_id = e.id
-    LEFT JOIN branches br ON e.branch_id = br.id
     LEFT JOIN branches b ON e.branch_id = b.id
     WHERE e.is_active = 1 AND e.deleted_at IS NULL AND {$whereClause}
     ORDER BY a.attendance_date DESC, a.late_minutes DESC, e.name ASC
@@ -253,6 +252,15 @@ require_once __DIR__ . '/../includes/admin_layout.php';
             <a href="late-report.php?reset=1" class="btn btn-secondary">🔄 إعادة تعيين</a>
             <?php if (!empty($lateRecords)): ?>
                 <a href="?<?= http_build_query(array_merge($_GET, ['export' => 'csv'])) ?>" class="btn btn-green">📥 تصدير CSV</a>
+                <?php
+                $pdfBase = array_filter(['date_from'=>$dateFrom,'date_to'=>$dateTo,'filter_type'=>$filterType,'employee_id'=>$employeeId,'branch_id'=>$branchId]);
+                ?>
+                <a href="late-report-pdf.php?<?= http_build_query($pdfBase) ?>" target="_blank"
+                   class="btn" style="background:#7C3AED;color:#fff">🖨️ PDF</a>
+                <a href="late-report-pdf.php?<?= http_build_query(array_merge($pdfBase,['bulk_mode'=>'employees'])) ?>" target="_blank"
+                   class="btn" style="background:#0891B2;color:#fff;font-size:.82rem">📄 PDF لكل موظف</a>
+                <a href="late-report-pdf.php?<?= http_build_query(array_merge($pdfBase,['bulk_mode'=>'branches'])) ?>" target="_blank"
+                   class="btn" style="background:#0F766E;color:#fff;font-size:.82rem">🏢 PDF لكل فرع</a>
             <?php endif; ?>
         </div>
     </form>

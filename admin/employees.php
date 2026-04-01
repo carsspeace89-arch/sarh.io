@@ -322,6 +322,7 @@ require_once __DIR__ . '/../includes/admin_layout.php';
         </form>
         <div class="top-actions" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
             <button class="btn btn-primary" onclick="openModal('addModal')">+ إضافة موظف</button>
+            <a href="employees-archive.php" class="btn btn-secondary" style="text-decoration:none">🗄️ الأرشيف</a>
             <a href="<?= SITE_URL ?>/employee/" target="_blank" class="btn btn-secondary" style="text-decoration:none">🔑 بوابة الحضور</a>
             <div class="dropdown-wrap" style="position:relative">
                 <button class="btn btn-secondary" onclick="toggleBulkMenu(this)" type="button">

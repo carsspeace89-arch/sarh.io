@@ -51,7 +51,7 @@ $rows = db()->query("
     ORDER BY g.expiry_date ASC
 ")->fetchAll();
 
-$pageTitle  = 'وثائق المنتهية';
+$pageTitle  = 'الوثائق المنتهية';
 $activePage = 'documents-expiry';
 
 function statusClass(int $days): string {

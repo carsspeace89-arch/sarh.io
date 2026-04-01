@@ -1,4 +1,8 @@
 <?php
+// =============================================================
+// admin/branch-edit.php - تعديل فرع (ورديات + موقع)
+// =============================================================
+
 require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/functions.php';
@@ -21,13 +25,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $lat      = (float)($_POST['latitude'] ?? 0);
     $lon      = (float)($_POST['longitude'] ?? 0);
     $radius   = (int)($_POST['geofence_radius'] ?? 25);
-    $wsTime   = sanitize($_POST['work_start_time'] ?? '08:00');
-    $weTime   = sanitize($_POST['work_end_time'] ?? '16:00');
-    $ciStart  = sanitize($_POST['check_in_start_time'] ?? '07:00');
-    $ciEnd    = sanitize($_POST['check_in_end_time'] ?? '10:00');
-    $coStart  = sanitize($_POST['check_out_start_time'] ?? '15:00');
-    $coEnd    = sanitize($_POST['check_out_end_time'] ?? '20:00');
-    $coShow   = (int)($_POST['checkout_show_before'] ?? 30);
     $allowOT  = (int)($_POST['allow_overtime'] ?? 1);
     $otAfter  = (int)($_POST['overtime_start_after'] ?? 60);
     $otMin    = (int)($_POST['overtime_min_duration'] ?? 30);
@@ -37,8 +34,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header('Location: branch-edit.php?id=' . $branchId . '&msg=' . urlencode('اسم الفرع مطلوب') . '&t=error');
         exit;
     }
-
-    // التحقق من صحة الإحداثيات
     if ($lat < -90 || $lat > 90 || $lon < -180 || $lon > 180) {
         header('Location: branch-edit.php?id=' . $branchId . '&msg=' . urlencode('إحداثيات غير صالحة') . '&t=error');
         exit;
@@ -48,30 +43,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $stmt = db()->prepare("UPDATE branches SET name=?, latitude=?, longitude=?, geofence_radius=?,
-        work_start_time=?, work_end_time=?, check_in_start_time=?, check_in_end_time=?,
-        check_out_start_time=?, check_out_end_time=?, checkout_show_before=?,
-        allow_overtime=?, overtime_start_after=?, overtime_min_duration=?, is_active=?
-        WHERE id=?");
+    $stmt = db()->prepare("UPDATE branches SET name=?, latitude=?, longitude=?, geofence_radius=?, allow_overtime=?, overtime_start_after=?, overtime_min_duration=?, is_active=? WHERE id=?");
+    $stmt->execute([$name, $lat, $lon, $radius, $allowOT, $otAfter, $otMin, $active, $branchId]);
 
-    $stmt->execute([
-        $name,
-        $lat,
-        $lon,
-        $radius,
-        $wsTime,
-        $weTime,
-        $ciStart,
-        $ciEnd,
-        $coStart,
-        $coEnd,
-        $coShow,
-        $allowOT,
-        $otAfter,
-        $otMin,
-        $active,
-        $branchId
-    ]);
+    // تحديث الورديات
+    db()->prepare("DELETE FROM branch_shifts WHERE branch_id = ?")->execute([$branchId]);
+    for ($s = 1; $s <= 3; $s++) {
+        $sStart = trim($_POST["shift_start_{$s}"] ?? '');
+        $sEnd   = trim($_POST["shift_end_{$s}"] ?? '');
+        if ($sStart && $sEnd) {
+            $stmt2 = db()->prepare("INSERT INTO branch_shifts (branch_id, shift_number, shift_start, shift_end, is_active) VALUES (?,?,?,?,1)");
+            $stmt2->execute([$branchId, $s, $sStart, $sEnd]);
+        }
+    }
 
     header('Location: branches.php?msg=' . urlencode('تم تحديث الفرع «' . $name . '»') . '&t=success');
     exit;
@@ -84,6 +68,14 @@ $branch = $stmt->fetch();
 if (!$branch) {
     header('Location: branches.php?msg=' . urlencode('الفرع غير موجود') . '&t=error');
     exit;
+}
+
+// جلب الورديات الحالية
+$shiftStmt = db()->prepare("SELECT shift_number, shift_start, shift_end FROM branch_shifts WHERE branch_id = ? AND is_active = 1 ORDER BY shift_number");
+$shiftStmt->execute([$branchId]);
+$existingShifts = [];
+foreach ($shiftStmt->fetchAll() as $sh) {
+    $existingShifts[(int)$sh['shift_number']] = $sh;
 }
 
 $pageTitle  = 'تعديل الفرع';
@@ -107,125 +99,29 @@ L.Icon.Default.mergeOptions({
 </script>
 
 <style>
-    .branch-edit-wrap {
-        max-width: 980px;
-        margin: 0 auto;
-    }
-
-    .branch-edit-card {
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        box-shadow: var(--shadow);
-        overflow: hidden;
-    }
-
-    .branch-edit-head {
-        background: linear-gradient(135deg, var(--primary), var(--primary-d));
-        color: #fff;
-        padding: 16px 20px;
-        font-size: 1.05rem;
-        font-weight: 700;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-
-    .branch-edit-body {
-        padding: 18px;
-    }
-
-    .form-row {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 14px;
-        margin-bottom: 14px;
-    }
-
-    .form-row.col3 {
-        grid-template-columns: 1fr 1fr 1fr;
-    }
-
-    .form-group {
-        display: flex;
-        flex-direction: column;
-    }
-
-    .form-label {
-        font-size: .78rem;
-        font-weight: 600;
-        color: var(--text2);
-        margin-bottom: 4px;
-    }
-
-    .form-control {
-        padding: 8px 12px;
-        border: 1.5px solid var(--border);
-        border-radius: 8px;
-        font-family: inherit;
-        font-size: .88rem;
-    }
-
-    .form-control:focus {
-        outline: none;
-        border-color: var(--primary);
-        box-shadow: 0 0 0 3px rgba(249, 115, 22, .15);
-    }
-
-    .form-section {
-        font-size: .82rem;
-        font-weight: 700;
-        color: var(--primary-d);
-        margin: 16px 0 8px;
-        padding: 6px 0;
-        border-bottom: 2px solid var(--primary-l);
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-
-    #branchMapEditPage {
-        width: 100%;
-        height: 320px;
-        border-radius: 10px;
-        margin-bottom: 10px;
-        border: 2px solid var(--border);
-        overflow: hidden;
-        position: relative;
-        z-index: 0;
-    }
-
-    .branch-edit-foot {
-        padding: 14px 18px;
-        border-top: 1px solid var(--border);
-        background: var(--surface2);
-        display: flex;
-        gap: 10px;
-        justify-content: flex-end;
-    }
-
+    .branch-edit-wrap { max-width: 980px; margin: 0 auto; }
+    .branch-edit-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+    .branch-edit-head { background: linear-gradient(135deg, var(--primary), var(--primary-d)); color: #fff; padding: 16px 20px; font-size: 1.05rem; font-weight: 700; display: flex; justify-content: space-between; align-items: center; }
+    .branch-edit-body { padding: 18px; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+    .form-row.col3 { grid-template-columns: 1fr 1fr 1fr; }
+    .form-group { display: flex; flex-direction: column; }
+    .form-label { font-size: .78rem; font-weight: 600; color: var(--text2); margin-bottom: 4px; }
+    .form-control { padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 8px; font-family: inherit; font-size: .88rem; }
+    .form-control:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(249,115,22,.15); }
+    .form-section { font-size: .82rem; font-weight: 700; color: var(--primary-d); margin: 16px 0 8px; padding: 6px 0; border-bottom: 2px solid var(--primary-l); display: flex; align-items: center; gap: 8px; }
+    #branchMapEditPage { width: 100%; height: 320px; border-radius: 10px; margin-bottom: 10px; border: 2px solid var(--border); overflow: hidden; position: relative; z-index: 0; }
+    .branch-edit-foot { padding: 14px 18px; border-top: 1px solid var(--border); background: var(--surface2); display: flex; gap: 10px; justify-content: flex-end; }
+    .shift-row { display: grid; grid-template-columns: auto 1fr 1fr; gap: 10px; align-items: end; margin-bottom: 10px; padding: 10px; background: var(--surface2); border-radius: 8px; border: 1px solid var(--border); }
+    .shift-row-label { font-size: .82rem; font-weight: 700; color: var(--primary-d); min-width: 65px; padding-bottom: 8px; }
     @media (max-width: 900px) {
-        .form-row,
-        .form-row.col3 {
-            grid-template-columns: 1fr;
-        }
-        #branchMapEditPage {
-            height: 250px;
-        }
-        .branch-edit-body {
-            padding: 12px;
-        }
-        .branch-edit-head {
-            padding: 12px 14px;
-            font-size: .95rem;
-        }
-        .branch-edit-foot {
-            flex-direction: column;
-        }
-        .branch-edit-foot .btn {
-            width: 100%;
-            justify-content: center;
-        }
+        .form-row, .form-row.col3 { grid-template-columns: 1fr; }
+        #branchMapEditPage { height: 250px; }
+        .branch-edit-body { padding: 12px; }
+        .branch-edit-head { padding: 12px 14px; font-size: .95rem; }
+        .branch-edit-foot { flex-direction: column; }
+        .branch-edit-foot .btn { width: 100%; justify-content: center; }
+        .shift-row { grid-template-columns: 1fr; }
     }
 </style>
 
@@ -273,69 +169,46 @@ L.Icon.Default.mergeOptions({
                     </div>
                 </div>
 
-                <div class="form-section">أوقات الدوام
-                    <button type="button" class="btn btn-green btn-sm" onclick="calcOptimal()" style="margin-right:auto;font-size:.72rem;padding:3px 10px">✨ النسب المثالية</button>
-                </div>
-                <div class="form-row col3">
+                <div class="form-section">الورديات (يُسمح بالتسجيل قبل الوردية بـ 90 دقيقة — الانصراف تلقائي)</div>
+                <?php for ($s = 1; $s <= 3; $s++):
+                    $sh = $existingShifts[$s] ?? null;
+                ?>
+                <div class="shift-row">
+                    <div class="shift-row-label">الوردية <?= $s ?></div>
                     <div class="form-group">
-                        <label class="form-label">بدء الدوام</label>
-                        <input class="form-control" type="time" name="work_start_time" id="eWS" value="<?= htmlspecialchars($branch['work_start_time']) ?>">
+                        <label class="form-label">من</label>
+                        <input class="form-control" type="time" name="shift_start_<?= $s ?>" value="<?= $sh ? htmlspecialchars(substr($sh['shift_start'], 0, 5)) : '' ?>">
                     </div>
                     <div class="form-group">
-                        <label class="form-label">نهاية الدوام</label>
-                        <input class="form-control" type="time" name="work_end_time" id="eWE" value="<?= htmlspecialchars($branch['work_end_time']) ?>">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">عرض الانصراف قبل (دقيقة)</label>
-                        <input class="form-control" type="number" name="checkout_show_before" id="eCOShow" value="<?= (int)$branch['checkout_show_before'] ?>" min="0">
+                        <label class="form-label">إلى</label>
+                        <input class="form-control" type="time" name="shift_end_<?= $s ?>" value="<?= $sh ? htmlspecialchars(substr($sh['shift_end'], 0, 5)) : '' ?>">
                     </div>
                 </div>
-
-                <div class="form-section">نوافذ التسجيل</div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label class="form-label">بدء تسجيل الدخول</label>
-                        <input class="form-control" type="time" name="check_in_start_time" id="eCIS" value="<?= htmlspecialchars($branch['check_in_start_time']) ?>">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">نهاية تسجيل الدخول</label>
-                        <input class="form-control" type="time" name="check_in_end_time" id="eCIE" value="<?= htmlspecialchars($branch['check_in_end_time']) ?>">
-                    </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label class="form-label">بدء الانصراف</label>
-                        <input class="form-control" type="time" name="check_out_start_time" id="eCOS" value="<?= htmlspecialchars($branch['check_out_start_time']) ?>">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">نهاية الانصراف</label>
-                        <input class="form-control" type="time" name="check_out_end_time" id="eCOE" value="<?= htmlspecialchars($branch['check_out_end_time']) ?>">
-                    </div>
-                </div>
+                <?php endfor; ?>
 
                 <div class="form-section">الدوام الإضافي</div>
                 <div class="form-row col3">
                     <div class="form-group">
                         <label class="form-label">مسموح</label>
-                        <select class="form-control" name="allow_overtime" id="eOT">
+                        <select class="form-control" name="allow_overtime">
                             <option value="1" <?= (int)$branch['allow_overtime'] === 1 ? 'selected' : '' ?>>نعم</option>
                             <option value="0" <?= (int)$branch['allow_overtime'] === 0 ? 'selected' : '' ?>>لا</option>
                         </select>
                     </div>
                     <div class="form-group">
                         <label class="form-label">يبدأ بعد (دقيقة)</label>
-                        <input class="form-control" type="number" name="overtime_start_after" id="eOTAfter" value="<?= (int)$branch['overtime_start_after'] ?>" min="0">
+                        <input class="form-control" type="number" name="overtime_start_after" value="<?= (int)$branch['overtime_start_after'] ?>" min="0">
                     </div>
                     <div class="form-group">
                         <label class="form-label">الحد الأدنى (دقيقة)</label>
-                        <input class="form-control" type="number" name="overtime_min_duration" id="eOTMin" value="<?= (int)$branch['overtime_min_duration'] ?>" min="0">
+                        <input class="form-control" type="number" name="overtime_min_duration" value="<?= (int)$branch['overtime_min_duration'] ?>" min="0">
                     </div>
                 </div>
 
                 <div class="form-row">
                     <div class="form-group">
                         <label class="form-label">الحالة</label>
-                        <select class="form-control" name="is_active" id="eActive">
+                        <select class="form-control" name="is_active">
                             <option value="1" <?= (int)$branch['is_active'] === 1 ? 'selected' : '' ?>>مفعّل</option>
                             <option value="0" <?= (int)$branch['is_active'] === 0 ? 'selected' : '' ?>>معطّل</option>
                         </select>
@@ -352,121 +225,60 @@ L.Icon.Default.mergeOptions({
 </div>
 
 <script>
-    let editMap, editMarker;
+let editMap, editMarker;
 
-    function initMap() {
-        const lat = parseFloat(document.getElementById('eLat').value) || 24.7136;
-        const lon = parseFloat(document.getElementById('eLon').value) || 46.6753;
-        editMap = L.map('branchMapEditPage').setView([lat, lon], 16);
-        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
-            attribution: '© Esri & contributors',
-            maxZoom: 19
-        }).addTo(editMap);
+function initMap() {
+    const lat = parseFloat(document.getElementById('eLat').value) || 24.7136;
+    const lon = parseFloat(document.getElementById('eLon').value) || 46.6753;
+    editMap = L.map('branchMapEditPage').setView([lat, lon], 16);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        attribution: '© Esri', maxZoom: 19
+    }).addTo(editMap);
+    editMarker = L.marker([lat, lon]).addTo(editMap);
+    editMap.on('click', e => placeMarker(e.latlng.lat, e.latlng.lng));
+    setTimeout(() => editMap.invalidateSize(), 120);
+}
 
-        editMarker = L.marker([lat, lon]).addTo(editMap);
-
-        editMap.on('click', function(e) {
-            placeMarker(e.latlng.lat, e.latlng.lng);
-        });
-
-        setTimeout(() => editMap.invalidateSize(), 120);
+function placeMarker(lat, lon, updateInputs = true) {
+    if (!editMap) return;
+    if (editMarker) editMap.removeLayer(editMarker);
+    editMarker = L.marker([lat, lon]).addTo(editMap);
+    editMap.setView([lat, lon], editMap.getZoom() < 14 ? 16 : editMap.getZoom());
+    if (updateInputs) {
+        document.getElementById('eLat').value = lat.toFixed(8);
+        document.getElementById('eLon').value = lon.toFixed(8);
     }
+}
 
-    function placeMarker(lat, lon, updateInputs = true) {
-        if (!editMap) return;
-        if (editMarker) editMap.removeLayer(editMarker);
-        editMarker = L.marker([lat, lon]).addTo(editMap);
-        editMap.setView([lat, lon], editMap.getZoom() < 14 ? 16 : editMap.getZoom());
-
-        if (updateInputs) {
-            document.getElementById('eLat').value = lat.toFixed(8);
-            document.getElementById('eLon').value = lon.toFixed(8);
-        }
+function syncMapFromInputs() {
+    const lat = parseFloat(document.getElementById('eLat').value);
+    const lon = parseFloat(document.getElementById('eLon').value);
+    if (!isNaN(lat) && !isNaN(lon) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) {
+        placeMarker(lat, lon, false);
     }
+}
 
-    function syncMapFromInputs() {
-        const lat = parseFloat(document.getElementById('eLat').value);
-        const lon = parseFloat(document.getElementById('eLon').value);
-        if (!isNaN(lat) && !isNaN(lon) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) {
-            placeMarker(lat, lon, false);
-        }
-    }
+function useMyLocation() {
+    if (!navigator.geolocation) { alert('المتصفح لا يدعم تحديد الموقع'); return; }
+    navigator.geolocation.getCurrentPosition(
+        pos => placeMarker(pos.coords.latitude, pos.coords.longitude),
+        err => alert('تعذّر تحديد الموقع: ' + err.message),
+        { enableHighAccuracy: true, timeout: 10000 }
+    );
+}
 
-    function useMyLocation() {
-        if (!navigator.geolocation) {
-            alert('المتصفح لا يدعم تحديد الموقع');
-            return;
-        }
-        navigator.geolocation.getCurrentPosition(
-            function(pos) {
-                placeMarker(pos.coords.latitude, pos.coords.longitude);
-            },
-            function(err) {
-                alert('تعذّر تحديد الموقع: ' + err.message);
-            },
-            { enableHighAccuracy: true, timeout: 10000 }
-        );
-    }
+function tick() { const el = document.getElementById('topbarClock'); if (el) el.textContent = new Date().toLocaleString('ar-SA'); }
+function toggleSidebar() {
+    document.getElementById('sidebar').classList.toggle('open');
+    document.getElementById('sidebarOverlay').classList.toggle('show');
+}
+document.getElementById('sidebarOverlay')?.addEventListener('click', toggleSidebar);
 
-    function calcOptimal() {
-        const wsEl = document.getElementById('eWS');
-        const weEl = document.getElementById('eWE');
-        const cisEl = document.getElementById('eCIS');
-        const cieEl = document.getElementById('eCIE');
-        const cosEl = document.getElementById('eCOS');
-        const coeEl = document.getElementById('eCOE');
-        const coShowEl = document.getElementById('eCOShow');
-        const otAfterEl = document.getElementById('eOTAfter');
-        const otMinEl = document.getElementById('eOTMin');
-
-        if (!wsEl.value || !weEl.value) {
-            alert('حدد بدء الدوام ونهايته أولاً');
-            return;
-        }
-
-        function toMin(t) {
-            const p = t.split(':');
-            return parseInt(p[0]) * 60 + parseInt(p[1]);
-        }
-
-        function toTime(m) {
-            m = ((m % 1440) + 1440) % 1440;
-            return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
-        }
-
-        const ws = toMin(wsEl.value);
-        const we = toMin(weEl.value);
-        let duration = we - ws;
-        if (duration <= 0) duration += 1440;
-
-        cisEl.value = toTime(ws - 30);
-        cieEl.value = toTime(ws + 60);
-        coShowEl.value = 15;
-        cosEl.value = toTime(ws + duration - 15);
-        coeEl.value = toTime(ws + duration + 30);
-        otAfterEl.value = 30;
-        otMinEl.value = 30;
-    }
-
-    function tick() {
-        const el = document.getElementById('topbarClock');
-        if (el) el.textContent = new Date().toLocaleString('ar-SA');
-    }
-
-    function toggleSidebar() {
-        document.getElementById('sidebar').classList.toggle('open');
-        document.getElementById('sidebarOverlay').classList.toggle('show');
-    }
-
-    document.getElementById('sidebarOverlay')?.addEventListener('click', toggleSidebar);
-
-    setTimeout(initMap, 400);
-    tick();
-    setInterval(tick, 1000);
+setTimeout(initMap, 400);
+tick(); setInterval(tick, 1000);
 </script>
 
 </div>
 </div>
 </body>
-
 </html>

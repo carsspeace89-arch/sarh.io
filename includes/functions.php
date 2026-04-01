@@ -334,7 +334,7 @@ function detectActiveShift(array $shifts): ?array {
     foreach ($shifts as $s) {
         $start = timeToMinutes($s['shift_start']);
         $end   = timeToMinutes($s['shift_end']);
-        $early = ($start - 60 + 1440) % 1440; // ساعة قبل البداية
+        $early = ($start - 90 + 1440) % 1440; // ساعة ونصف قبل البداية
         if ($end < $early) {
             // يعبر منتصف الليل
             if ($nowMin >= $early || $nowMin <= $end) return $s;

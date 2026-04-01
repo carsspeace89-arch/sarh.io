@@ -221,11 +221,11 @@ require_once __DIR__ . '/../includes/admin_layout.php';
 <div style="display:grid;grid-template-columns:2fr 1fr;gap:20px;margin-bottom:20px">
     <div class="card" style="padding:20px">
         <h3 style="margin:0 0 16px;font-size:1rem;color:var(--text-primary,#1E293B)">📊 الحضور والانصراف اليومي</h3>
-        <canvas id="dailyChart" height="220"></canvas>
+        <div style="position:relative;height:280px"><canvas id="dailyChart"></canvas></div>
     </div>
     <div class="card" style="padding:20px">
         <h3 style="margin:0 0 16px;font-size:1rem;color:var(--text-primary,#1E293B)">🏢 التوزيع حسب الفروع</h3>
-        <canvas id="branchChart" height="220"></canvas>
+        <div style="position:relative;height:280px"><canvas id="branchChart"></canvas></div>
     </div>
 </div>
 
@@ -233,11 +233,11 @@ require_once __DIR__ . '/../includes/admin_layout.php';
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px">
     <div class="card" style="padding:20px">
         <h3 style="margin:0 0 16px;font-size:1rem;color:var(--text-primary,#1E293B)">⏱️ متوسط التأخير اليومي (دقائق)</h3>
-        <canvas id="lateChart" height="200"></canvas>
+        <div style="position:relative;height:260px"><canvas id="lateChart"></canvas></div>
     </div>
     <div class="card" style="padding:20px">
         <h3 style="margin:0 0 16px;font-size:1rem;color:var(--text-primary,#1E293B)">📅 الحضور حسب أيام الأسبوع</h3>
-        <canvas id="dowChart" height="200"></canvas>
+        <div style="position:relative;height:260px"><canvas id="dowChart"></canvas></div>
     </div>
 </div>
 

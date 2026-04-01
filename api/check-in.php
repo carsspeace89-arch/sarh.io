@@ -56,8 +56,8 @@ $workStart      = $schedule['work_start_time'];
 $workEnd        = $schedule['work_end_time'];
 $nowTime        = date('H:i');
 
-// بداية النافذة = shift_start - 60 دقيقة
-$earlyStart = date('H:i', strtotime($workStart) - 3600);
+// بداية النافذة = shift_start - 90 دقيقة (ساعة ونصف)
+$earlyStart = date('H:i', strtotime($workStart) - 5400);
 
 // التحقق: من earlyStart إلى workEnd
 if ($workEnd < $earlyStart) {
