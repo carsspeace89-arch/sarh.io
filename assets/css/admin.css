@@ -268,16 +268,23 @@ hr { border:none; border-top:1px solid var(--border); margin:20px 0; }
     animation:fadeIn .2s ease;
 }
 .dropdown-menu.show { display:block; }
+.dropdown-menu form { display:block; width:100%; }
 .dropdown-item {
     display:flex; align-items:center; gap:8px; width:100%; padding:8px 16px;
     font-family:inherit; font-size:.85rem; color:var(--text); background:none; border:none;
-    cursor:pointer; text-align:right; transition:background .15s;
+    cursor:pointer; text-align:right; transition:background .15s; white-space:nowrap;
 }
 .dropdown-item:hover { background:var(--surface2); }
 .dropdown-item svg { flex-shrink:0; }
 
 /* ── Employee Actions Dropdown ── */
-.emp-actions-menu { left:auto; right:0; min-width:200px; }
+.emp-actions-menu { left:auto; right:0; min-width:220px; }
+/* Overlay for dropdown (works on all screen sizes) */
+.dropdown-overlay {
+    display:none; position:fixed; inset:0;
+    background:rgba(0,0,0,.15); z-index:199;
+}
+.dropdown-overlay.show { display:block; }
 .btn-copy-branch {
     background:none; border:none; cursor:pointer; color:inherit; opacity:.5;
     margin-right:6px; padding:2px 4px; border-radius:4px; vertical-align:middle;
@@ -450,6 +457,7 @@ hr { border:none; border-top:1px solid var(--border); margin:20px 0; }
 
     /* Maps smaller height */
     #mapContainer { height:300px; }
+    #dashboardMap { height:300px !important; }
     #branchMapAdd, #branchMapEdit { height:200px; }
 
     /* Map controls stack */
@@ -479,7 +487,7 @@ hr { border:none; border-top:1px solid var(--border); margin:20px 0; }
     }
     @keyframes slideUpSheet { from{transform:translateY(100%)} to{transform:translateY(0)} }
     .dropdown-menu.show .dropdown-item {
-        padding:12px 20px; font-size:.92rem;
+        padding:14px 20px; font-size:.92rem; min-height:48px;
     }
     .dropdown-menu.show::before {
         content:''; display:block; width:40px; height:4px;
@@ -488,8 +496,8 @@ hr { border:none; border-top:1px solid var(--border); margin:20px 0; }
     }
     /* Overlay for bottom-sheet dropdown */
     .dropdown-overlay {
-        display:none; position:fixed; inset:0;
-        background:rgba(0,0,0,.35); z-index:1000;
+        background:rgba(0,0,0,.35);
+        z-index:1000;
         backdrop-filter:blur(2px);
     }
     .dropdown-overlay.show { display:block; }
@@ -545,6 +553,29 @@ hr { border:none; border-top:1px solid var(--border); margin:20px 0; }
     .topbar h1 { font-size:.84rem; max-width:100px; }
     .topbar-page-icon { width:30px; height:30px; }
     .topbar-left { gap:6px; }
+
+    /* Map smaller on very small screens */
+    #dashboardMap { height:250px !important; }
+}
+
+/* ── Tablet (768-1024) ── */
+@media (min-width: 769px) and (max-width: 1024px) {
+    .sidebar { width:220px; }
+    .main-content { margin-right:220px; }
+    .nav-item { font-size:.82rem; padding:8px 10px; }
+    .nav-icon { width:30px; height:30px; }
+    .brand-name { font-size:.95rem; }
+    .stats-grid { grid-template-columns:repeat(3, 1fr); }
+    .dashboard-grid { grid-template-columns:1fr; }
+}
+
+/* ── Global touch improvements ── */
+@media (hover: none) and (pointer: coarse) {
+    .btn, .dropdown-item, .nav-item, .bnav-item {
+        -webkit-tap-highlight-color:transparent;
+    }
+    input, select, textarea { font-size:16px !important; }
+    .dropdown-item { padding:12px 16px; min-height:44px; }
 }
 
 /* ── Print ── */

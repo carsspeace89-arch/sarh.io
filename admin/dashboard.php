@@ -165,7 +165,7 @@ require_once __DIR__ . '/../includes/admin_layout.php';
             <span>مباشر</span>
         </div>
     </div>
-    <div id="dashboardMap" style="height:420px;border-radius:8px;z-index:1"></div>
+    <div id="dashboardMap" style="height:420px;border-radius:8px;z-index:1;min-height:250px"></div>
 </div>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -268,10 +268,16 @@ require_once __DIR__ . '/../includes/admin_layout.php';
 .emp-name-label::before {
     border-top-color: rgba(15,23,42,.85) !important;
 }
+@media (max-width: 768px) {
+    .radar-marker { width:60px !important; height:60px !important; }
+    .radar-center span:first-child { font-size:12px !important; }
+    .radar-center span:last-child { font-size:8px !important; }
+    .emp-name-label { font-size:8px !important; padding:1px 5px !important; }
+}
 </style>
 <script>
 (function(){
-    const map = L.map('dashboardMap', {zoomControl: true}).setView([24.7136, 46.6753], 6);
+    const map = L.map('dashboardMap', {zoomControl: true, scrollWheelZoom: true, dragging: true, tap: true}).setView([24.7136, 46.6753], 12);
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
         attribution: 'Esri', maxZoom: 19
     }).addTo(map);
@@ -284,6 +290,9 @@ require_once __DIR__ . '/../includes/admin_layout.php';
         const pct = b.emp_count > 0 ? Math.round((b.present_today / b.emp_count) * 100) : 0;
         const cls = pct >= 80 ? '' : (pct >= 50 ? 'warn' : 'danger');
         const color = pct >= 80 ? '#10B981' : (pct >= 50 ? '#F59E0B' : '#EF4444');
+
+        // نقاط الموظفين الحية داخل هذا الفرع (يجب تعريفها قبل استخدامها)
+        const branchCheckins = liveCheckins.filter(c => c.branch_id == b.id);
 
         // نطاق الجيوفينس الفعلي
         const geoRadius = b.geofence_radius || 500;
@@ -332,7 +341,6 @@ require_once __DIR__ . '/../includes/admin_layout.php';
         </div>`);
 
         // نقاط الموظفين الحية داخل هذا الفرع
-        const branchCheckins = liveCheckins.filter(c => c.branch_id == b.id);
         branchCheckins.forEach((c, idx) => {
             const empMarker = L.circleMarker([c.latitude, c.longitude], {
                 radius: 5, fillColor: '#60A5FA', color: '#fff',
@@ -350,7 +358,11 @@ require_once __DIR__ . '/../includes/admin_layout.php';
 
     if (branches.length > 0) {
         const bounds = branches.filter(b => b.latitude && b.longitude).map(b => [b.latitude, b.longitude]);
-        if (bounds.length > 0) map.fitBounds(bounds, {padding: [40,40], maxZoom: 14});
+        if (bounds.length === 1) {
+            map.setView(bounds[0], 15);
+        } else if (bounds.length > 1) {
+            map.fitBounds(bounds, {padding: [50,50], maxZoom: 16});
+        }
     }
 
     window._dashMap = map;

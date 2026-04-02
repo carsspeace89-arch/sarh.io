@@ -886,11 +886,25 @@ require_once __DIR__ . '/../includes/admin_layout.php';
         if (!wasOpen) {
             menu.classList.add('show');
             const ov = document.getElementById('dropdownOverlay');
-            if (ov && window.innerWidth <= 768) ov.classList.add('show');
+            if (ov) ov.classList.add('show');
+            // على الشاشات الكبيرة: تثبيت القائمة لتجنب القص بسبب overflow
+            if (window.innerWidth > 768) {
+                const rect = btn.getBoundingClientRect();
+                menu.style.position = 'fixed';
+                menu.style.top = (rect.bottom + 4) + 'px';
+                menu.style.right = (window.innerWidth - rect.right) + 'px';
+                menu.style.left = 'auto';
+            }
         }
     }
     function closeAllMenus() {
-        document.querySelectorAll('.dropdown-menu.show').forEach(m => m.classList.remove('show'));
+        document.querySelectorAll('.dropdown-menu.show').forEach(m => {
+            m.classList.remove('show');
+            m.style.position = '';
+            m.style.top = '';
+            m.style.right = '';
+            m.style.left = '';
+        });
         const ov = document.getElementById('dropdownOverlay');
         if (ov) ov.classList.remove('show');
     }
@@ -902,7 +916,14 @@ require_once __DIR__ . '/../includes/admin_layout.php';
         if (!wasOpen) {
             menu.classList.add('show');
             const ov = document.getElementById('dropdownOverlay');
-            if (ov && window.innerWidth <= 768) ov.classList.add('show');
+            if (ov) ov.classList.add('show');
+            if (window.innerWidth > 768) {
+                const rect = btn.getBoundingClientRect();
+                menu.style.position = 'fixed';
+                menu.style.top = (rect.bottom + 4) + 'px';
+                menu.style.right = (window.innerWidth - rect.right) + 'px';
+                menu.style.left = 'auto';
+            }
         }
     }
     // إغلاق القوائم عند النقر خارجها (desktop)
