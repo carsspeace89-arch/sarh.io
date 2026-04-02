@@ -409,6 +409,55 @@ function getBranchSchedule(?int $branchId = null): array {
 }
 
 /**
+ * جلب جميع ورديات الفروع مجمعة حسب الفرع (للقوائم المنسدلة)
+ */
+function getAllBranchShifts(): array {
+    $stmt = db()->query("SELECT id, branch_id, shift_number, shift_start, shift_end FROM branch_shifts WHERE is_active = 1 ORDER BY branch_id, shift_number");
+    $result = [];
+    foreach ($stmt->fetchAll() as $row) {
+        $result[$row['branch_id']][] = [
+            'id' => (int)$row['id'],
+            'num' => (int)$row['shift_number'],
+            'start' => substr($row['shift_start'], 0, 5),
+            'end' => substr($row['shift_end'], 0, 5)
+        ];
+    }
+    return $result;
+}
+
+/**
+ * بناء شرط SQL لفلتر الوردية بناءً على أوقات بداية/نهاية الوردية
+ * النافذة: بداية الوردية - ساعتين إلى نهاية الوردية + ساعة
+ */
+function buildShiftTimeFilter(int $shiftId, string $tableAlias = 'a'): ?array {
+    $stmt = db()->prepare("SELECT shift_start, shift_end FROM branch_shifts WHERE id = ? AND is_active = 1");
+    $stmt->execute([$shiftId]);
+    $shift = $stmt->fetch();
+    if (!$shift) return null;
+
+    $startMin = timeToMinutes($shift['shift_start']);
+    $endMin   = timeToMinutes($shift['shift_end']);
+
+    $windowStart = ($startMin - 120 + 1440) % 1440;
+    $windowEnd   = ($endMin + 60) % 1440;
+
+    $wsTime = sprintf('%02d:%02d:00', intdiv($windowStart, 60), $windowStart % 60);
+    $weTime = sprintf('%02d:%02d:00', intdiv($windowEnd, 60), $windowEnd % 60);
+
+    if ($windowStart < $windowEnd) {
+        return [
+            'sql' => "TIME({$tableAlias}.timestamp) BETWEEN ? AND ?",
+            'params' => [$wsTime, $weTime]
+        ];
+    } else {
+        return [
+            'sql' => "(TIME({$tableAlias}.timestamp) >= ? OR TIME({$tableAlias}.timestamp) <= ?)",
+            'params' => [$wsTime, $weTime]
+        ];
+    }
+}
+
+/**
  * تحويل وقت إلى عربي مقروء
  */
 function arabicDateTime(string $datetime): string {

@@ -19,6 +19,7 @@ if ($dateFrom > $dateTo) { $tmp = $dateFrom; $dateFrom = $dateTo; $dateTo = $tmp
 $branchId   = (int)($_GET['branch_id'] ?? 0);
 $employeeId = (int)($_GET['employee_id'] ?? 0);
 $minEarly   = max(0, (int)($_GET['min_early'] ?? 1));
+$filterShift = (int)($_GET['shift'] ?? 0);
 
 // بناء الاستعلام
 $where  = ["a.type = 'in'", "a.early_minutes >= ?", "a.attendance_date BETWEEN ? AND ?"];
@@ -26,6 +27,10 @@ $params = [$minEarly, $dateFrom, $dateTo];
 
 if ($employeeId > 0) { $where[] = "e.id = ?"; $params[] = $employeeId; }
 if ($branchId > 0)   { $where[] = "e.branch_id = ?"; $params[] = $branchId; }
+if ($filterShift > 0) {
+    $sf = buildShiftTimeFilter($filterShift);
+    if ($sf) { $where[] = $sf['sql']; $params = array_merge($params, $sf['params']); }
+}
 
 $whereStr = implode(' AND ', $where);
 
@@ -108,11 +113,17 @@ require_once __DIR__ . '/../includes/admin_layout.php';
         <div><label class="form-label">إلى تاريخ</label><input class="form-control" type="date" name="date_to" value="<?= $dateTo ?>"></div>
         <div>
             <label class="form-label">الفرع</label>
-            <select class="form-control" name="branch_id">
+            <select class="form-control" name="branch_id" id="branchSelect">
                 <option value="0">الكل</option>
                 <?php foreach ($branches as $br): ?>
                 <option value="<?= $br['id'] ?>" <?= $branchId == $br['id'] ? 'selected' : '' ?>><?= htmlspecialchars($br['name']) ?></option>
                 <?php endforeach; ?>
+            </select>
+        </div>
+        <div>
+            <label class="form-label">الوردية</label>
+            <select class="form-control" name="shift" id="shiftSelect">
+                <option value="0">كل الورديات</option>
             </select>
         </div>
         <div>
@@ -218,6 +229,30 @@ require_once __DIR__ . '/../includes/admin_layout.php';
     </table>
     </div>
 </div>
+
+<script>
+(function(){
+    const branchShifts = <?= json_encode(getAllBranchShifts(), JSON_UNESCAPED_UNICODE) ?>;
+    const branchSel = document.getElementById('branchSelect');
+    const shiftSel = document.getElementById('shiftSelect');
+    const curShift = <?= $filterShift ?>;
+    function updateShifts(){
+        const bid = branchSel ? branchSel.value : 0;
+        shiftSel.innerHTML = '<option value="0">كل الورديات</option>';
+        if(bid && branchShifts[bid]){
+            branchShifts[bid].forEach(s=>{
+                const o = document.createElement('option');
+                o.value = s.id;
+                o.textContent = 'وردية '+s.num+' ('+s.start+' - '+s.end+')';
+                if(s.id == curShift) o.selected = true;
+                shiftSel.appendChild(o);
+            });
+        }
+    }
+    if(branchSel) branchSel.addEventListener('change', ()=>{ shiftSel.value = 0; updateShifts(); });
+    updateShifts();
+})();
+</script>
 
 <?php require_once __DIR__ . '/../includes/admin_footer.php'; ?>
 </div></div></body></html>

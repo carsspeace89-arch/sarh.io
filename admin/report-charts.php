@@ -16,6 +16,7 @@ $activePage = 'report-charts';
 $dateFrom = $_GET['date_from'] ?? date('Y-m-01');
 $dateTo   = $_GET['date_to']   ?? date('Y-m-d');
 $branchId = !empty($_GET['branch_id']) ? (int)$_GET['branch_id'] : null;
+$filterShift = (int)($_GET['shift'] ?? 0);
 
 // Validate dates
 if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateFrom)) $dateFrom = date('Y-m-01');
@@ -24,8 +25,16 @@ if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateTo))   $dateTo   = date('Y-m-d');
 // =================== الفروع ===================
 $branches = db()->query("SELECT id, name FROM branches WHERE is_active = 1 ORDER BY name")->fetchAll();
 
+// فلتر الوردية
+$shiftTimeCond = '';
+$shiftTimeParams = [];
+if ($filterShift > 0) {
+    $sf = buildShiftTimeFilter($filterShift);
+    if ($sf) { $shiftTimeCond = "AND " . $sf['sql']; $shiftTimeParams = $sf['params']; }
+}
+
 // =================== إحصائيات الفترة ===================
-$statsParams = [$dateFrom, $dateTo];
+$statsParams = array_merge([$dateFrom, $dateTo], $shiftTimeParams);
 $statsFilter = '';
 if ($branchId) {
     $statsFilter = 'AND e.branch_id = ?';
@@ -44,13 +53,14 @@ $statsStmt = db()->prepare("
     JOIN employees e ON a.employee_id = e.id
     WHERE a.attendance_date BETWEEN ? AND ?
       AND a.type IN ('in', 'out')
+      {$shiftTimeCond}
       {$statsFilter}
 ");
 $statsStmt->execute($statsParams);
 $stats = $statsStmt->fetch();
 
 // =================== بيانات الرسم البياني (حضور يومي) ===================
-$chartParams = [$dateFrom, $dateTo];
+$chartParams = array_merge([$dateFrom, $dateTo], $shiftTimeParams);
 $chartFilter = '';
 if ($branchId) {
     $chartFilter = 'AND e.branch_id = ?';
@@ -65,6 +75,7 @@ $chartStmt = db()->prepare("
     FROM attendances a
     JOIN employees e ON a.employee_id = e.id
     WHERE a.attendance_date BETWEEN ? AND ?
+      {$shiftTimeCond}
       {$chartFilter}
     GROUP BY a.attendance_date
     ORDER BY a.attendance_date
@@ -85,14 +96,15 @@ $branchChartStmt = db()->prepare("
     JOIN branches b ON e.branch_id = b.id
     WHERE a.attendance_date BETWEEN ? AND ?
       AND a.type = 'in'
+      {$shiftTimeCond}
     GROUP BY b.id, b.name
     ORDER BY employees DESC
 ");
-$branchChartStmt->execute([$dateFrom, $dateTo]);
+$branchChartStmt->execute(array_merge([$dateFrom, $dateTo], $shiftTimeParams));
 $branchChartData = $branchChartStmt->fetchAll();
 
 // =================== أكثر الموظفين تأخيراً ===================
-$topLateParams = [$dateFrom, $dateTo];
+$topLateParams = array_merge([$dateFrom, $dateTo], $shiftTimeParams);
 $topLateFilter = '';
 if ($branchId) {
     $topLateFilter = 'AND e.branch_id = ?';
@@ -109,6 +121,7 @@ $topLateStmt = db()->prepare("
     JOIN branches b ON e.branch_id = b.id
     WHERE a.attendance_date BETWEEN ? AND ?
       AND a.type = 'in' AND a.late_minutes > 0
+      {$shiftTimeCond}
       {$topLateFilter}
     GROUP BY a.employee_id, e.name, b.name
     ORDER BY total_late DESC
@@ -118,6 +131,8 @@ $topLateStmt->execute($topLateParams);
 $topLateData = $topLateStmt->fetchAll();
 
 // =================== معدل الحضور حسب يوم الأسبوع ===================
+$dowParams = array_merge([$dateFrom, $dateTo], $shiftTimeParams);
+if ($branchId) $dowParams[] = $branchId;
 $dayOfWeekStmt = db()->prepare("
     SELECT DAYOFWEEK(a.attendance_date) AS dow,
            COUNT(DISTINCT a.employee_id) AS employees
@@ -125,12 +140,11 @@ $dayOfWeekStmt = db()->prepare("
     JOIN employees e ON a.employee_id = e.id
     WHERE a.attendance_date BETWEEN ? AND ?
       AND a.type = 'in'
+      {$shiftTimeCond}
       " . ($branchId ? 'AND e.branch_id = ?' : '') . "
     GROUP BY dow
     ORDER BY dow
 ");
-$dowParams = [$dateFrom, $dateTo];
-if ($branchId) $dowParams[] = $branchId;
 $dayOfWeekStmt->execute($dowParams);
 $dowData = $dayOfWeekStmt->fetchAll();
 
@@ -160,12 +174,19 @@ require_once __DIR__ . '/../includes/admin_layout.php';
         </div>
         <div>
             <label style="font-size:.82rem;color:var(--text3);display:block;margin-bottom:4px">الفرع</label>
-            <select name="branch_id"
+            <select name="branch_id" id="branchSelect"
                     style="padding:8px 12px;border:1px solid var(--border-color,#E2E8F0);border-radius:8px;font-size:.9rem;background:var(--surface2,#F8FAFC);color:var(--text-primary,#1E293B)">
                 <option value="">جميع الفروع</option>
                 <?php foreach ($branches as $b): ?>
                     <option value="<?= $b['id'] ?>" <?= $branchId == $b['id'] ? 'selected' : '' ?>><?= htmlspecialchars($b['name']) ?></option>
                 <?php endforeach; ?>
+            </select>
+        </div>
+        <div>
+            <label style="font-size:.82rem;color:var(--text3);display:block;margin-bottom:4px">الوردية</label>
+            <select name="shift" id="shiftSelect"
+                    style="padding:8px 12px;border:1px solid var(--border-color,#E2E8F0);border-radius:8px;font-size:.9rem;background:var(--surface2,#F8FAFC);color:var(--text-primary,#1E293B)">
+                <option value="0">كل الورديات</option>
             </select>
         </div>
         <button type="submit" class="btn btn-primary" style="padding:8px 20px;height:fit-content">
@@ -423,6 +444,29 @@ require_once __DIR__ . '/../includes/admin_layout.php';
             }
         }
     });
+})();
+
+// فلتر الورديات الديناميكي
+(function(){
+    const branchShifts = <?= json_encode(getAllBranchShifts(), JSON_UNESCAPED_UNICODE) ?>;
+    const branchSel = document.getElementById('branchSelect');
+    const shiftSel = document.getElementById('shiftSelect');
+    const curShift = <?= $filterShift ?>;
+    function updateShifts(){
+        const bid = branchSel ? branchSel.value : 0;
+        shiftSel.innerHTML = '<option value="0">كل الورديات</option>';
+        if(bid && branchShifts[bid]){
+            branchShifts[bid].forEach(s=>{
+                const o = document.createElement('option');
+                o.value = s.id;
+                o.textContent = 'وردية '+s.num+' ('+s.start+' - '+s.end+')';
+                if(s.id == curShift) o.selected = true;
+                shiftSel.appendChild(o);
+            });
+        }
+    }
+    if(branchSel) branchSel.addEventListener('change', ()=>{ shiftSel.value = 0; updateShifts(); });
+    updateShifts();
 })();
 </script>
 

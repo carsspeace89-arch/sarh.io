@@ -11,6 +11,7 @@ requireAdminLogin();
 
 $date         = $_GET['date']   ?? date('Y-m-d');
 $filterBranch = (int)($_GET['branch'] ?? 0);
+$filterShift  = (int)($_GET['shift'] ?? 0);
 
 // التحقق من التاريخ
 if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
@@ -23,10 +24,21 @@ if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
 $branchList = db()->query("SELECT id, name FROM branches WHERE is_active=1 ORDER BY name")->fetchAll();
 
 // =========================================================
+// فلتر الوردية
+// =========================================================
+$shiftTimeCond = '';
+$shiftTimeParams = [];
+if ($filterShift > 0) {
+    $sf = buildShiftTimeFilter($filterShift);
+    if ($sf) { $shiftTimeCond = "AND " . str_replace('a.timestamp', 'timestamp', $sf['sql']); $shiftTimeParams = $sf['params']; }
+}
+
+// =========================================================
 // جلب الموظفين مع سجلات الحضور الخاصة بهم
 // =========================================================
 $branchWhere = $filterBranch > 0 ? "AND e.branch_id = ?" : "";
-$params      = $filterBranch > 0 ? [$date, $date, $filterBranch] : [$date, $date];
+$params = array_merge([$date], $shiftTimeParams, [$date], $shiftTimeParams);
+if ($filterBranch > 0) { $params[] = $filterBranch; }
 
 $sql = "
     SELECT
@@ -43,12 +55,14 @@ $sql = "
         SELECT employee_id, MIN(timestamp) AS timestamp, late_minutes
         FROM attendances
         WHERE type = 'in' AND attendance_date = ?
+        $shiftTimeCond
         GROUP BY employee_id
     ) ci ON ci.employee_id = e.id
     LEFT JOIN (
         SELECT employee_id, MAX(timestamp) AS timestamp
         FROM attendances
         WHERE type = 'out' AND attendance_date = ?
+        $shiftTimeCond
         GROUP BY employee_id
     ) co ON co.employee_id = e.id
     WHERE e.is_active = 1 AND e.deleted_at IS NULL
@@ -328,13 +342,16 @@ $dateAr    = $dayOfWeek . '، ' . $dateObj->format('j') . ' / ' . $dateObj->form
   <div class="tb-controls">
     <form method="GET" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <input type="date" name="date" value="<?= htmlspecialchars($date) ?>" max="<?= date('Y-m-d') ?>">
-      <select name="branch">
+      <select name="branch" id="branchSelect">
         <option value="0" <?= !$filterBranch ? 'selected' : '' ?>>جميع الفروع</option>
         <?php foreach ($branchList as $b): ?>
           <option value="<?= $b['id'] ?>" <?= $filterBranch == $b['id'] ? 'selected' : '' ?>>
             <?= htmlspecialchars($b['name']) ?>
           </option>
         <?php endforeach; ?>
+      </select>
+      <select name="shift" id="shiftSelect">
+        <option value="0">كل الورديات</option>
       </select>
       <button type="submit" class="btn-print" style="background:#475569">عرض</button>
     </form>
@@ -360,6 +377,13 @@ $dateAr    = $dayOfWeek . '، ' . $dateObj->format('j') . ' / ' . $dateObj->form
     </div>
     <div class="rh-meta">
       <span>الفرع: <?= htmlspecialchars($selectedBranchName) ?></span>
+      <?php if ($filterShift > 0): 
+          $sfInfo = db()->prepare("SELECT shift_number, shift_start, shift_end FROM branch_shifts WHERE id = ?");
+          $sfInfo->execute([$filterShift]);
+          $sfRow = $sfInfo->fetch();
+          if ($sfRow): ?>
+          <span>الوردية: <?= $sfRow['shift_number'] ?> (<?= substr($sfRow['shift_start'],0,5) ?> - <?= substr($sfRow['shift_end'],0,5) ?>)</span>
+          <?php endif; endif; ?>
       <span>إجمالي الموظفين: <?= $totalEmp ?></span>
       <span>صدر بتاريخ: <?= date('Y/m/d H:i') ?></span>
     </div>
@@ -508,6 +532,28 @@ $dateAr    = $dayOfWeek . '، ' . $dateObj->format('j') . ' / ' . $dateObj->form
 </div><!-- /.page -->
 
 <script>
+// فلتر الورديات الديناميكي
+(function(){
+    const branchShifts = <?= json_encode(getAllBranchShifts(), JSON_UNESCAPED_UNICODE) ?>;
+    const branchSel = document.getElementById('branchSelect');
+    const shiftSel = document.getElementById('shiftSelect');
+    const curShift = <?= $filterShift ?>;
+    function updateShifts(){
+        const bid = branchSel ? branchSel.value : 0;
+        shiftSel.innerHTML = '<option value="0">كل الورديات</option>';
+        if(bid && branchShifts[bid]){
+            branchShifts[bid].forEach(s=>{
+                const o = document.createElement('option');
+                o.value = s.id;
+                o.textContent = 'وردية '+s.num+' ('+s.start+' - '+s.end+')';
+                if(s.id == curShift) o.selected = true;
+                shiftSel.appendChild(o);
+            });
+        }
+    }
+    if(branchSel) branchSel.addEventListener('change', ()=>{ shiftSel.value = 0; updateShifts(); });
+    updateShifts();
+})();
 // طباعة تلقائية إذا طُلب ذلك من URL
 if (new URLSearchParams(location.search).get('autoprint') === '1') {
     window.addEventListener('load', () => setTimeout(() => window.print(), 400));

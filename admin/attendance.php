@@ -177,6 +177,7 @@ if ($dateFrom > $dateTo) {
 $empId    = (int)($_GET['emp_id'] ?? 0);
 $type     = $_GET['type'] ?? '';
 $filterBranch = (int)($_GET['branch'] ?? 0);
+$filterShift  = (int)($_GET['shift'] ?? 0);
 $page     = max(1, (int)($_GET['page'] ?? 1));
 $perPage  = 25;
 $offset   = ($page - 1) * $perPage;
@@ -188,6 +189,10 @@ $params = [$dateFrom, $dateTo];
 if ($empId > 0) { $where[] = "a.employee_id = ?"; $params[] = $empId; }
 if (in_array($type, ['in','out'])) { $where[] = "a.type = ?"; $params[] = $type; }
 if ($filterBranch > 0) { $where[] = "e.branch_id = ?"; $params[] = $filterBranch; }
+if ($filterShift > 0) {
+    $shiftFilter = buildShiftTimeFilter($filterShift);
+    if ($shiftFilter) { $where[] = $shiftFilter['sql']; $params = array_merge($params, $shiftFilter['params']); }
+}
 
 $whereStr = implode(' AND ', $where);
 
@@ -296,13 +301,19 @@ require_once __DIR__ . '/../includes/admin_layout.php';
         </div>
         <div class="form-group" style="margin:0">
             <label class="form-label">الفرع</label>
-            <select class="form-control" name="branch">
+            <select class="form-control" name="branch" id="branchSelect">
                 <option value="0">الكل</option>
                 <?php foreach ($branchList as $br): ?>
                 <option value="<?= $br['id'] ?>" <?= $filterBranch == $br['id'] ? 'selected' : '' ?>>
                     <?= htmlspecialchars($br['name']) ?>
                 </option>
                 <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="form-group" style="margin:0">
+            <label class="form-label">الوردية</label>
+            <select class="form-control" name="shift" id="shiftSelect">
+                <option value="0">كل الورديات</option>
             </select>
         </div>
         <div class="form-group" style="margin:0">
@@ -314,7 +325,7 @@ require_once __DIR__ . '/../includes/admin_layout.php';
             </select>
         </div>
         <button type="submit" class="btn btn-primary">بحث</button>
-        <a href="?date_from=<?= $dateFrom ?>&date_to=<?= $dateTo ?>&emp_id=<?= $empId ?>&type=<?= $type ?>&branch=<?= $filterBranch ?>&export=csv"
+        <a href="?date_from=<?= $dateFrom ?>&date_to=<?= $dateTo ?>&emp_id=<?= $empId ?>&type=<?= $type ?>&branch=<?= $filterBranch ?>&shift=<?= $filterShift ?>&export=csv"
            class="btn btn-green">تصدير CSV</a>
         <a href="report-daily.php?date=<?= $dateFrom ?>&branch=<?= $filterBranch ?>"
            target="_blank"
@@ -401,6 +412,7 @@ require_once __DIR__ . '/../includes/admin_layout.php';
                 'emp_id'    => $empId ?: null,
                 'type'      => $type ?: null,
                 'branch'    => $filterBranch ?: null,
+                'shift'     => $filterShift ?: null,
             ]));
             for ($p = 1; $p <= $maxPages; $p++):
         ?>
@@ -508,6 +520,29 @@ require_once __DIR__ . '/../includes/admin_layout.php';
 </div>
 
 <script>
+// =================== فلتر الورديات الديناميكي ===================
+(function(){
+    const branchShifts = <?= json_encode(getAllBranchShifts(), JSON_UNESCAPED_UNICODE) ?>;
+    const branchSel = document.getElementById('branchSelect');
+    const shiftSel = document.getElementById('shiftSelect');
+    const curShift = <?= $filterShift ?>;
+    function updateShifts(){
+        const bid = branchSel ? branchSel.value : 0;
+        shiftSel.innerHTML = '<option value="0">كل الورديات</option>';
+        if(bid && branchShifts[bid]){
+            branchShifts[bid].forEach(s=>{
+                const o = document.createElement('option');
+                o.value = s.id;
+                o.textContent = 'وردية '+s.num+' ('+s.start+' - '+s.end+')';
+                if(s.id == curShift) o.selected = true;
+                shiftSel.appendChild(o);
+            });
+        }
+    }
+    if(branchSel) branchSel.addEventListener('change', ()=>{ shiftSel.value = 0; updateShifts(); });
+    updateShifts();
+})();
+
 // =================== الساعة ===================
 function tick(){ const el=document.getElementById('topbarClock'); if(el) el.textContent=new Date().toLocaleString('ar-SA'); }
 tick(); setInterval(tick,1000);

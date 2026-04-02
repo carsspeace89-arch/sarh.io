@@ -125,20 +125,28 @@ while ($row = $r->fetch_assoc()) {
 $updated = 0;
 foreach ($pinMap as $pin => $ids) {
     if (count($ids) === 1) {
-        $dst->query("UPDATE employees SET pin='$pin' WHERE id={$ids[0]}");
+        $stmtUp = $dst->prepare("UPDATE employees SET pin=? WHERE id=?");
+        $stmtUp->bind_param('si', $pin, $ids[0]);
+        $stmtUp->execute();
         $updated++;
     } else {
         echo "CONFLICT pin '$pin' for IDs: " . implode(', ', $ids) . "\n";
         foreach ($ids as $i => $id) {
             if ($i === 0) {
-                $dst->query("UPDATE employees SET pin='$pin' WHERE id=$id");
+                $stmtUp = $dst->prepare("UPDATE employees SET pin=? WHERE id=?");
+                $stmtUp->bind_param('si', $pin, $id);
+                $stmtUp->execute();
             } else {
-                $r2 = $dst->query("SELECT phone FROM employees WHERE id=$id");
-                $emp = $r2->fetch_assoc();
+                $r2 = $dst->prepare("SELECT phone FROM employees WHERE id=?");
+                $r2->bind_param('i', $id);
+                $r2->execute();
+                $emp = $r2->get_result()->fetch_assoc();
                 $clean = preg_replace('/[^0-9]/', '', $emp['phone']);
                 $pin5 = substr($clean, -5);
                 if ($pin5 === $pin) $pin5 = $pin . $id;
-                $dst->query("UPDATE employees SET pin='" . $dst->real_escape_string($pin5) . "' WHERE id=$id");
+                $stmtUp2 = $dst->prepare("UPDATE employees SET pin=? WHERE id=?");
+                $stmtUp2->bind_param('si', $pin5, $id);
+                $stmtUp2->execute();
                 echo "  emp $id -> $pin5\n";
             }
             $updated++;

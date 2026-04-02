@@ -21,7 +21,11 @@ $offset = ($page - 1) * $perPage;
 
 // =================== Handle Actions (POST) ===================
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
-    verifyCsrfToken($_POST['csrf_token'] ?? '');
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        $_SESSION['flash_error'] = 'طلب غير صالح، يرجى المحاولة مرة أخرى';
+        header('Location: leaves.php?' . http_build_query(array_filter($_GET)));
+        exit;
+    }
     $leaveId = (int)($_POST['leave_id'] ?? 0);
     $action  = $_POST['action'];
 

@@ -16,6 +16,7 @@ $activePage = 'report-monthly';
 $month    = $_GET['month'] ?? date('Y-m');
 $branchId = !empty($_GET['branch_id']) ? (int)$_GET['branch_id'] : null;
 $empId    = !empty($_GET['emp_id']) ? (int)$_GET['emp_id'] : null;
+$filterShift = (int)($_GET['shift'] ?? 0);
 
 $year  = (int)date('Y', strtotime($month . '-01'));
 $mon   = (int)date('m', strtotime($month . '-01'));
@@ -51,6 +52,14 @@ $employees = $empStmt->fetchAll();
 $startDate = "{$year}-" . str_pad($mon, 2, '0', STR_PAD_LEFT) . "-01";
 $endDate   = "{$year}-" . str_pad($mon, 2, '0', STR_PAD_LEFT) . "-" . str_pad($daysInMonth, 2, '0', STR_PAD_LEFT);
 
+// فلتر الوردية
+$shiftTimeCond = '';
+$shiftTimeParams = [];
+if ($filterShift > 0) {
+    $sf = buildShiftTimeFilter($filterShift);
+    if ($sf) { $shiftTimeCond = "AND " . $sf['sql']; $shiftTimeParams = $sf['params']; }
+}
+
 $attStmt = db()->prepare("
     SELECT a.employee_id, a.attendance_date, a.type, 
            MIN(CASE WHEN a.type='in' THEN a.timestamp END) AS first_in,
@@ -58,9 +67,10 @@ $attStmt = db()->prepare("
            SUM(CASE WHEN a.type='in' THEN a.late_minutes ELSE 0 END) AS late_minutes
     FROM attendances a
     WHERE a.attendance_date BETWEEN ? AND ?
+    $shiftTimeCond
     GROUP BY a.employee_id, a.attendance_date
 ");
-$attStmt->execute([$startDate, $endDate]);
+$attStmt->execute(array_merge([$startDate, $endDate], $shiftTimeParams));
 $attData = $attStmt->fetchAll();
 
 // ترتيب البيانات: [emp_id][date] => row
@@ -104,11 +114,17 @@ require_once __DIR__ . '/../includes/admin_layout.php';
         </div>
         <div>
             <label style="font-size:.78rem;color:var(--text3);display:block;margin-bottom:3px">الفرع</label>
-            <select name="branch_id" style="padding:8px 12px;border:1px solid var(--border-color,#E2E8F0);border-radius:8px;font-size:.88rem;background:var(--surface2,#F8FAFC);color:var(--text-primary)">
+            <select name="branch_id" id="branchSelect" style="padding:8px 12px;border:1px solid var(--border-color,#E2E8F0);border-radius:8px;font-size:.88rem;background:var(--surface2,#F8FAFC);color:var(--text-primary)">
                 <option value="">كل الفروع</option>
                 <?php foreach ($branches as $b): ?>
                     <option value="<?= $b['id'] ?>" <?= $branchId == $b['id'] ? 'selected' : '' ?>><?= htmlspecialchars($b['name']) ?></option>
                 <?php endforeach; ?>
+            </select>
+        </div>
+        <div>
+            <label style="font-size:.78rem;color:var(--text3);display:block;margin-bottom:3px">الوردية</label>
+            <select name="shift" id="shiftSelect" style="padding:8px 12px;border:1px solid var(--border-color,#E2E8F0);border-radius:8px;font-size:.88rem;background:var(--surface2,#F8FAFC);color:var(--text-primary)">
+                <option value="0">كل الورديات</option>
             </select>
         </div>
         <div>
@@ -258,6 +274,30 @@ foreach ($employees as $emp) {
 <?php if (empty($employees)): ?>
 <div class="card" style="padding:40px;text-align:center;color:var(--text3)">لا يوجد موظفون مطابقون للفلاتر</div>
 <?php endif; ?>
+
+<script>
+(function(){
+    const branchShifts = <?= json_encode(getAllBranchShifts(), JSON_UNESCAPED_UNICODE) ?>;
+    const branchSel = document.getElementById('branchSelect');
+    const shiftSel = document.getElementById('shiftSelect');
+    const curShift = <?= $filterShift ?>;
+    function updateShifts(){
+        const bid = branchSel ? branchSel.value : 0;
+        shiftSel.innerHTML = '<option value="0">كل الورديات</option>';
+        if(bid && branchShifts[bid]){
+            branchShifts[bid].forEach(s=>{
+                const o = document.createElement('option');
+                o.value = s.id;
+                o.textContent = 'وردية '+s.num+' ('+s.start+' - '+s.end+')';
+                if(s.id == curShift) o.selected = true;
+                shiftSel.appendChild(o);
+            });
+        }
+    }
+    if(branchSel) branchSel.addEventListener('change', ()=>{ shiftSel.value = 0; updateShifts(); });
+    updateShifts();
+})();
+</script>
 
 <style>
 @media print {
