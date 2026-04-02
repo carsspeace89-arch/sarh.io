@@ -920,9 +920,23 @@ require_once __DIR__ . '/../includes/admin_layout.php';
             if (window.innerWidth > 768) {
                 const rect = btn.getBoundingClientRect();
                 menu.style.position = 'fixed';
-                menu.style.top = (rect.bottom + 4) + 'px';
                 menu.style.right = (window.innerWidth - rect.right) + 'px';
                 menu.style.left = 'auto';
+                // حساب ارتفاع القائمة وتحديد الاتجاه
+                const menuH = menu.offsetHeight;
+                const spaceBelow = window.innerHeight - rect.bottom - 8;
+                const spaceAbove = rect.top - 8;
+                if (spaceBelow >= menuH || spaceBelow >= spaceAbove) {
+                    menu.style.top = (rect.bottom + 4) + 'px';
+                    menu.style.bottom = 'auto';
+                    menu.style.maxHeight = Math.max(200, spaceBelow) + 'px';
+                    menu.style.overflowY = spaceBelow < menuH ? 'auto' : '';
+                } else {
+                    menu.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
+                    menu.style.top = 'auto';
+                    menu.style.maxHeight = Math.max(200, spaceAbove) + 'px';
+                    menu.style.overflowY = spaceAbove < menuH ? 'auto' : '';
+                }
             }
         }
     }
@@ -933,6 +947,9 @@ require_once __DIR__ . '/../includes/admin_layout.php';
             m.style.top = '';
             m.style.right = '';
             m.style.left = '';
+            m.style.bottom = '';
+            m.style.maxHeight = '';
+            m.style.overflowY = '';
         });
         const ov = document.getElementById('dropdownOverlay');
         if (ov) ov.classList.remove('show');
