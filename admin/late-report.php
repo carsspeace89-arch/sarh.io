@@ -49,6 +49,15 @@ if ($filterType === 'employee' && $employeeId) {
     $params[] = $branchId;
 }
 
+// فلتر الوردية
+$filterShift = (int)($_GET['shift'] ?? 0);
+$shiftTimeCond = '';
+$shiftTimeParams = [];
+if ($filterShift > 0) {
+    $sf = buildShiftTimeFilter($filterShift);
+    if ($sf) { $shiftTimeCond = "AND " . $sf['sql']; $shiftTimeParams = $sf['params']; }
+}
+
 $whereClause = implode(' AND ', $whereConditions);
 
 // استعلام حساب التأخير
@@ -58,17 +67,30 @@ $stmt = db()->prepare("
         e.name AS employee_name,
         e.job_title,
         b.name AS branch_name,
-        DATE_FORMAT(DATE_SUB(a.timestamp, INTERVAL a.late_minutes MINUTE), '%H:%i') AS work_start_time,
+        COALESCE(
+            DATE_FORMAT(bs.shift_start, '%H:%i'),
+            DATE_FORMAT(DATE_SUB(a.timestamp, INTERVAL a.late_minutes MINUTE), '%H:%i')
+        ) AS work_start_time,
         a.attendance_date,
         a.timestamp AS checkin_time,
         a.late_minutes
     FROM attendances a
     INNER JOIN employees e ON a.employee_id = e.id
     LEFT JOIN branches b ON e.branch_id = b.id
+    LEFT JOIN branch_shifts bs ON bs.branch_id = e.branch_id AND bs.is_active = 1
+        AND bs.shift_number = (
+            SELECT bs2.shift_number FROM branch_shifts bs2 
+            WHERE bs2.branch_id = e.branch_id AND bs2.is_active = 1
+            ORDER BY ABS(TIMESTAMPDIFF(MINUTE, 
+                CONCAT(a.attendance_date, ' ', bs2.shift_start), 
+                a.timestamp)) 
+            LIMIT 1
+        )
     WHERE e.is_active = 1 AND e.deleted_at IS NULL AND {$whereClause}
+    {$shiftTimeCond}
     ORDER BY a.attendance_date DESC, a.late_minutes DESC, e.name ASC
 ");
-$stmt->execute($params);
+$stmt->execute(array_merge($params, $shiftTimeParams));
 $lateRecords = $stmt->fetchAll();
 
 // حساب الإحصائيات
@@ -245,6 +267,12 @@ require_once __DIR__ . '/../includes/admin_layout.php';
             <div class="filter-group">
                 <label>إلى تاريخ</label>
                 <input type="date" name="date_to" value="<?= htmlspecialchars($dateTo) ?>">
+            </div>
+            <div class="filter-group">
+                <label>الوردية</label>
+                <select name="shift" id="shiftSelect">
+                    <option value="0">كل الورديات</option>
+                </select>
             </div>
         </div>
         <div class="filter-actions">
@@ -426,6 +454,29 @@ require_once __DIR__ . '/../includes/admin_layout.php';
         document.getElementById('employeeFilter').style.display = type === 'employee' ? 'block' : 'none';
         document.getElementById('branchFilter').style.display = type === 'branch' ? 'block' : 'none';
     }
+
+    // فلتر الورديات الديناميكي
+    (function(){
+        const branchShifts = <?= json_encode(getAllBranchShifts(), JSON_UNESCAPED_UNICODE) ?>;
+        const branchSel = document.querySelector('select[name="branch_id"]');
+        const shiftSel = document.getElementById('shiftSelect');
+        const curShift = <?= $filterShift ?>;
+        function updateShifts(){
+            const bid = branchSel ? branchSel.value : 0;
+            shiftSel.innerHTML = '<option value="0">كل الورديات</option>';
+            if(bid && branchShifts[bid]){
+                branchShifts[bid].forEach(s=>{
+                    const o = document.createElement('option');
+                    o.value = s.id;
+                    o.textContent = 'وردية '+s.num+' ('+s.start+' - '+s.end+')';
+                    if(s.id == curShift) o.selected = true;
+                    shiftSel.appendChild(o);
+                });
+            }
+        }
+        if(branchSel) branchSel.addEventListener('change', ()=>{ shiftSel.value = 0; updateShifts(); });
+        updateShifts();
+    })();
 
     function tick() {
         const el = document.getElementById('topbarClock');

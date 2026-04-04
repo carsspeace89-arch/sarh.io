@@ -52,7 +52,7 @@ $sql = "
     FROM employees e
     LEFT JOIN branches b ON e.branch_id = b.id
     LEFT JOIN (
-        SELECT employee_id, MIN(timestamp) AS timestamp, late_minutes
+        SELECT employee_id, MIN(timestamp) AS timestamp, MIN(late_minutes) AS late_minutes
         FROM attendances
         WHERE type = 'in' AND attendance_date = ?
         $shiftTimeCond

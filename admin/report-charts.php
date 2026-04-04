@@ -53,6 +53,7 @@ $statsStmt = db()->prepare("
     JOIN employees e ON a.employee_id = e.id
     WHERE a.attendance_date BETWEEN ? AND ?
       AND a.type IN ('in', 'out')
+      AND e.is_active = 1 AND e.deleted_at IS NULL
       {$shiftTimeCond}
       {$statsFilter}
 ");
@@ -75,6 +76,7 @@ $chartStmt = db()->prepare("
     FROM attendances a
     JOIN employees e ON a.employee_id = e.id
     WHERE a.attendance_date BETWEEN ? AND ?
+      AND e.is_active = 1 AND e.deleted_at IS NULL
       {$shiftTimeCond}
       {$chartFilter}
     GROUP BY a.attendance_date
@@ -96,6 +98,7 @@ $branchChartStmt = db()->prepare("
     JOIN branches b ON e.branch_id = b.id
     WHERE a.attendance_date BETWEEN ? AND ?
       AND a.type = 'in'
+      AND e.is_active = 1 AND e.deleted_at IS NULL
       {$shiftTimeCond}
     GROUP BY b.id, b.name
     ORDER BY employees DESC
@@ -118,9 +121,10 @@ $topLateStmt = db()->prepare("
            ROUND(AVG(a.late_minutes)) AS avg_late
     FROM attendances a
     JOIN employees e ON a.employee_id = e.id
-    JOIN branches b ON e.branch_id = b.id
+    LEFT JOIN branches b ON e.branch_id = b.id
     WHERE a.attendance_date BETWEEN ? AND ?
       AND a.type = 'in' AND a.late_minutes > 0
+      AND e.is_active = 1 AND e.deleted_at IS NULL
       {$shiftTimeCond}
       {$topLateFilter}
     GROUP BY a.employee_id, e.name, b.name
@@ -140,6 +144,7 @@ $dayOfWeekStmt = db()->prepare("
     JOIN employees e ON a.employee_id = e.id
     WHERE a.attendance_date BETWEEN ? AND ?
       AND a.type = 'in'
+      AND e.is_active = 1 AND e.deleted_at IS NULL
       {$shiftTimeCond}
       " . ($branchId ? 'AND e.branch_id = ?' : '') . "
     GROUP BY dow

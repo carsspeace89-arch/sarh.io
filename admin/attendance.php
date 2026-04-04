@@ -60,7 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_id'])) {
             $empBrStmt = db()->prepare("SELECT branch_id FROM employees WHERE id = ?");
             $empBrStmt->execute([$attRec['employee_id']]);
             $empBr = $empBrStmt->fetch();
-            $schedule = getBranchSchedule($empBr['branch_id'] ?? null);
+            $schedule = getBranchSchedule($empBr ? ($empBr['branch_id'] ?? null) : null);
             $workStart = strtotime($editDate . ' ' . $schedule['work_start_time']);
             $checkinTime = strtotime($newTimestamp);
             $graceMinutes = (int) getSystemSetting('late_grace_minutes', '0');
@@ -149,7 +149,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['manual_add'])) {
         $empBrSt = db()->prepare("SELECT branch_id FROM employees WHERE id = ?");
         $empBrSt->execute([$manualEmpId]);
         $empBr = $empBrSt->fetch();
-        $schedule = getBranchSchedule($empBr['branch_id'] ?? null);
+        $schedule = getBranchSchedule($empBr ? ($empBr['branch_id'] ?? null) : null);
         $wStart = strtotime($manualDate . ' ' . $schedule['work_start_time']);
         $cTime  = strtotime($ts);
         $graceMinutes = (int) getSystemSetting('late_grace_minutes', '0');
@@ -212,7 +212,10 @@ $recStmt = db()->prepare("
     ORDER BY a.timestamp DESC
     LIMIT ? OFFSET ?
 ");
-$recStmt->execute(array_merge($params, [$perPage, $offset]));
+foreach ($params as $i => $v) { $recStmt->bindValue($i + 1, $v); }
+$recStmt->bindValue(count($params) + 1, $perPage, PDO::PARAM_INT);
+$recStmt->bindValue(count($params) + 2, $offset, PDO::PARAM_INT);
+$recStmt->execute();
 $records = $recStmt->fetchAll();
 
 // قائمة الموظفين للفلتر
