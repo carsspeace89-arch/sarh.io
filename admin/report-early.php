@@ -84,6 +84,18 @@ foreach ($records as $rec) {
 }
 uasort($employeeStats, fn($a, $b) => $b['total_minutes'] <=> $a['total_minutes']);
 
+// جلب صور الموظفين
+$empIds = array_keys($employeeStats);
+$empPhotos = [];
+if (!empty($empIds)) {
+    $placeholders = implode(',', array_fill(0, count($empIds), '?'));
+    $photoStmt = db()->prepare("SELECT id, profile_photo FROM employees WHERE id IN ({$placeholders})");
+    $photoStmt->execute($empIds);
+    foreach ($photoStmt->fetchAll() as $p) {
+        $empPhotos[$p['id']] = $p['profile_photo'];
+    }
+}
+
 $totalEarlyMinutes = array_sum(array_column($records, 'early_minutes'));
 $totalEarlyDays    = count($records);
 $uniqueEmployees   = count($employeeStats);
@@ -109,16 +121,13 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
 require_once __DIR__ . '/../includes/admin_layout.php';
 ?>
 
-<style>
-.filter-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:14px; margin-top:12px }
-.rank-num { width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:.82rem; color:#fff }
-</style>
 <?php
 $reportTitle = 'تقرير التبكير والموظفين المتميزين';
 $reportSubtitle = 'نظام الحضور والانصراف';
 $reportMeta = ["الفترة: {$dateFrom} إلى {$dateTo}"];
 require __DIR__ . '/../includes/report_print_header.php';
 ?>
+
 <!-- الفلاتر -->
 <div class="report-filter">
     <form method="GET" class="filter-bar">
@@ -161,48 +170,125 @@ require __DIR__ . '/../includes/report_print_header.php';
 
 <!-- الإحصائيات -->
 <div class="report-stats">
-    <div class="report-stat accent-green"><div class="report-stat-icon is-green"><?= svgIcon('star', 24) ?></div><div><div class="report-stat-value"><?= $uniqueEmployees ?></div><div class="report-stat-label">موظفون متميزون</div></div></div>
-    <div class="report-stat accent-blue"><div class="report-stat-icon is-blue"><?= svgIcon('calendar', 24) ?></div><div><div class="report-stat-value"><?= $totalEarlyDays ?></div><div class="report-stat-label">أيام تبكير</div></div></div>
-    <div class="report-stat accent-orange"><div class="report-stat-icon is-orange"><?= svgIcon('clock', 24) ?></div><div><div class="report-stat-value"><?= number_format($totalEarlyMinutes) ?></div><div class="report-stat-label">إجمالي دقائق التبكير</div></div></div>
-    <div class="report-stat accent-purple"><div class="report-stat-icon is-purple"><?= svgIcon('chart', 24) ?></div><div><div class="report-stat-value"><?= $uniqueEmployees > 0 ? round($totalEarlyMinutes / $uniqueEmployees) : 0 ?></div><div class="report-stat-label">متوسط التبكير / موظف</div></div></div>
+    <div class="report-stat accent-green">
+        <div class="report-stat-icon is-green"><?= svgIcon('star', 24) ?></div>
+        <div><div class="report-stat-value"><?= $uniqueEmployees ?></div><div class="report-stat-label">موظفون متميزون</div></div>
+    </div>
+    <div class="report-stat accent-blue">
+        <div class="report-stat-icon is-blue"><?= svgIcon('calendar', 24) ?></div>
+        <div><div class="report-stat-value"><?= $totalEarlyDays ?></div><div class="report-stat-label">أيام تبكير</div></div>
+    </div>
+    <div class="report-stat accent-orange">
+        <div class="report-stat-icon is-orange"><?= svgIcon('attendance', 24) ?></div>
+        <div><div class="report-stat-value"><?= number_format($totalEarlyMinutes) ?></div><div class="report-stat-label">إجمالي دقائق التبكير</div></div>
+    </div>
+    <div class="report-stat accent-purple">
+        <div class="report-stat-icon is-purple"><?= svgIcon('chart', 24) ?></div>
+        <div><div class="report-stat-value"><?= $uniqueEmployees > 0 ? round($totalEarlyMinutes / $uniqueEmployees) : 0 ?></div><div class="report-stat-label">متوسط التبكير / موظف</div></div>
+    </div>
 </div>
 
+<?php if (count($employeeStats) >= 3): ?>
+<!-- منصة التتويج — أفضل 3 موظفين -->
+<div class="podium-grid">
+<?php
+$top3 = array_slice($employeeStats, 0, 3, true);
+$rankIdx = 0;
+$rankClasses = ['gold', 'silver', 'bronze'];
+$medalClasses = ['gold-medal', 'silver-medal', 'bronze-medal'];
+$textClasses = ['gold-text', 'silver-text', 'bronze-text'];
+$medals = ['🥇', '🥈', '🥉'];
+$rankLabels = ['المركز الأول', 'المركز الثاني', 'المركز الثالث'];
+foreach ($top3 as $eid => $s):
+    $cls = $rankClasses[$rankIdx];
+    $medalCls = $medalClasses[$rankIdx];
+    $textCls = $textClasses[$rankIdx];
+    $medal = $medals[$rankIdx];
+    $label = $rankLabels[$rankIdx];
+    $photo = $empPhotos[$eid] ?? null;
+    $initial = mb_substr($s['name'], 0, 1);
+    $avg = round($s['total_minutes'] / max(1, $s['total_days']));
+?>
+    <div class="rank-card <?= $cls ?>">
+        <div class="rank-medal <?= $medalCls ?>"><?= $medal ?></div>
+        <?php if ($photo): ?>
+            <img src="<?= SITE_URL ?>/api/serve-file.php?f=<?= urlencode($photo) ?>" alt="" class="rank-avatar <?= $cls ?>">
+        <?php else: ?>
+            <div class="rank-avatar-ph <?= $cls ?>"><?= $initial ?></div>
+        <?php endif; ?>
+        <div class="rank-name"><?= htmlspecialchars($s['name']) ?></div>
+        <div class="rank-job"><?= htmlspecialchars($s['job_title']) ?></div>
+        <div class="rank-branch"><?= htmlspecialchars($s['branch_name'] ?? '-') ?></div>
+        <div class="rank-stats">
+            <div>
+                <span class="rank-stat-val <?= $textCls ?>"><?= $s['total_minutes'] ?></span>
+                <span class="rank-stat-lbl">دقيقة تبكير</span>
+            </div>
+            <div>
+                <span class="rank-stat-val <?= $textCls ?>"><?= $s['total_days'] ?></span>
+                <span class="rank-stat-lbl">يوم</span>
+            </div>
+            <div>
+                <span class="rank-stat-val <?= $textCls ?>"><?= $avg ?></span>
+                <span class="rank-stat-lbl">متوسط/يوم</span>
+            </div>
+        </div>
+    </div>
+<?php $rankIdx++; endforeach; ?>
+</div>
+<div class="royal-divider"></div>
+<?php endif; ?>
+
 <!-- ترتيب المتميزين -->
-<div class="report-table-wrap" style="margin-bottom:20px">
-    <div class="card-header" style="padding:16px 20px;margin:0;border-bottom:2px solid var(--surface3)">
-        <span class="card-title"><span class="card-title-bar"></span> <?= svgIcon('star', 18) ?> ترتيب المتميزين</span>
+<div class="report-table-wrap" style="margin-bottom:24px">
+    <div class="card-header" style="padding:18px 24px;margin:0;border-bottom:2px solid var(--royal-gold-light)">
+        <span class="card-title"><span class="card-title-bar"></span> <?= svgIcon('star', 18) ?> ترتيب جميع المتميزين</span>
         <span class="badge badge-green"><?= $uniqueEmployees ?> موظف</span>
     </div>
     <div style="overflow-x:auto">
     <table class="att-table">
-        <thead><tr><th>الترتيب</th><th>الموظف</th><th>الفرع</th><th>أيام التبكير</th><th>إجمالي التبكير</th><th>أقصى تبكير</th><th>متوسط التبكير</th></tr></thead>
+        <thead><tr><th style="width:60px">الترتيب</th><th>الموظف</th><th>الفرع</th><th>أيام التبكير</th><th>إجمالي التبكير</th><th>أقصى تبكير</th><th>متوسط التبكير</th></tr></thead>
         <tbody>
         <?php if (empty($employeeStats)): ?>
-            <tr><td colspan="7" class="report-empty" style="padding:40px"><p>لا يوجد سجلات تبكير في هذه الفترة</p></td></tr>
+            <tr><td colspan="7" class="report-empty" style="padding:50px"><p>لا يوجد سجلات تبكير في هذه الفترة</p></td></tr>
         <?php else: ?>
-            <?php $rank = 0; foreach ($employeeStats as $eid => $s): $rank++; ?>
+            <?php $rank = 0; foreach ($employeeStats as $eid => $s): $rank++;
+                $photo = $empPhotos[$eid] ?? null;
+                $initial = mb_substr($s['name'], 0, 1);
+            ?>
             <tr>
-                <td>
+                <td style="text-align:center">
                     <?php if ($rank === 1): ?><div class="rank-num" style="background:linear-gradient(135deg,#F59E0B,#D97706)">1</div>
                     <?php elseif ($rank === 2): ?><div class="rank-num" style="background:linear-gradient(135deg,#9CA3AF,#6B7280)">2</div>
                     <?php elseif ($rank === 3): ?><div class="rank-num" style="background:linear-gradient(135deg,#F97316,#EA580C)">3</div>
-                    <?php else: ?><span style="color:var(--text3);font-weight:600"><?= $rank ?></span>
+                    <?php else: ?><span style="color:var(--text3);font-weight:700;font-size:.9rem"><?= $rank ?></span>
                     <?php endif; ?>
                 </td>
                 <td>
-                    <strong><?= htmlspecialchars($s['name']) ?></strong>
-                    <?php if ($rank <= 3): ?>
-                        <span class="rank-badge <?= $rank === 1 ? 'gold' : ($rank === 2 ? 'silver' : 'bronze') ?>">
-                            <?= $rank === 1 ? '🥇 ذهبي' : ($rank === 2 ? '🥈 فضي' : '🥉 برونزي') ?>
-                        </span>
-                    <?php endif; ?>
-                    <br><small style="color:var(--text3)"><?= htmlspecialchars($s['job_title']) ?></small>
+                    <div style="display:flex;align-items:center;gap:12px">
+                        <?php if ($photo): ?>
+                            <img src="<?= SITE_URL ?>/api/serve-file.php?f=<?= urlencode($photo) ?>" alt="" class="td-avatar">
+                        <?php else: ?>
+                            <span class="td-avatar-ph"><?= $initial ?></span>
+                        <?php endif; ?>
+                        <div>
+                            <strong style="color:var(--royal-navy)"><?= htmlspecialchars($s['name']) ?></strong>
+                            <?php if ($rank <= 3): ?>
+                                <span class="rank-badge <?= $rank === 1 ? 'gold' : ($rank === 2 ? 'silver' : 'bronze') ?>" style="margin-right:6px">
+                                    <?= $rank === 1 ? '🥇 ذهبي' : ($rank === 2 ? '🥈 فضي' : '🥉 برونزي') ?>
+                                </span>
+                            <?php endif; ?>
+                            <br><small style="color:var(--text3)"><?= htmlspecialchars($s['job_title']) ?></small>
+                        </div>
+                    </div>
                 </td>
-                <td style="font-size:.82rem;color:var(--text2)"><?= htmlspecialchars($s['branch_name'] ?? '-') ?></td>
-                <td style="font-weight:600"><?= $s['total_days'] ?> يوم</td>
-                <td style="color:#059669;font-weight:700"><?= $s['total_minutes'] ?> د</td>
-                <td style="color:#7C3AED;font-weight:600"><?= $s['max_early'] ?> د</td>
-                <td><?= round($s['total_minutes'] / max(1, $s['total_days'])) ?> د</td>
+                <td>
+                    <span class="emp-card-branch"><?= htmlspecialchars($s['branch_name'] ?? '-') ?></span>
+                </td>
+                <td style="font-weight:700"><?= $s['total_days'] ?> <small style="color:var(--text3)">يوم</small></td>
+                <td style="font-weight:800;color:#059669;font-size:1rem"><?= $s['total_minutes'] ?> <small style="font-weight:500">د</small></td>
+                <td style="color:#7C3AED;font-weight:700"><?= $s['max_early'] ?> <small style="font-weight:500">د</small></td>
+                <td style="color:var(--royal-gold-dark);font-weight:600"><?= round($s['total_minutes'] / max(1, $s['total_days'])) ?> <small style="font-weight:500">د</small></td>
             </tr>
             <?php endforeach; ?>
         <?php endif; ?>
@@ -213,33 +299,47 @@ require __DIR__ . '/../includes/report_print_header.php';
 
 <!-- التفاصيل اليومية -->
 <div class="report-table-wrap">
-    <div class="card-header" style="padding:16px 20px;margin:0;border-bottom:2px solid var(--surface3)">
+    <div class="card-header" style="padding:18px 24px;margin:0;border-bottom:2px solid var(--royal-gold-light)">
         <span class="card-title"><span class="card-title-bar"></span> <?= svgIcon('calendar', 18) ?> التفاصيل اليومية</span>
         <span class="badge badge-blue"><?= count($records) ?> سجل</span>
     </div>
     <div style="overflow-x:auto">
     <table class="att-table">
-        <thead><tr><th>#</th><th>الموظف</th><th>الفرع</th><th>الوردية</th><th>التاريخ</th><th>وقت الحضور</th><th>التبكير</th></tr></thead>
+        <thead><tr><th style="width:50px">#</th><th>الموظف</th><th>الفرع</th><th>الوردية</th><th>التاريخ</th><th>وقت الحضور</th><th>التبكير</th></tr></thead>
         <tbody>
-        <?php foreach ($records as $i => $rec): ?>
-        <tr style="background:rgba(5,150,105,<?= min(0.12, ($rec['early_minutes'] / 200)) ?>)">
-            <td style="color:var(--text3)"><?= $i + 1 ?></td>
-            <td><strong><?= htmlspecialchars($rec['employee_name']) ?></strong><br><small style="color:var(--text3)"><?= htmlspecialchars($rec['job_title']) ?></small></td>
-            <td style="font-size:.82rem;color:var(--text2)"><?= htmlspecialchars($rec['branch_name'] ?? '-') ?></td>
-            <td style="text-align:center;font-weight:600;color:var(--primary)">و<?= $rec['shift_number'] ?? 1 ?></td>
-            <td style="color:var(--text2)"><?= $rec['attendance_date'] ?></td>
-            <td style="color:var(--primary);font-weight:bold"><?= date('h:i A', strtotime($rec['checkin_time'])) ?></td>
+        <?php foreach ($records as $i => $rec):
+            $photo = $empPhotos[$rec['employee_id']] ?? null;
+            $initial = mb_substr($rec['employee_name'], 0, 1);
+            $em = $rec['early_minutes'];
+            $emoji = $em >= 30 ? '🌟' : ($em >= 15 ? '⭐' : '✨');
+            $intensityBg = min(0.1, ($em / 250));
+        ?>
+        <tr style="background:rgba(5,150,105,<?= $intensityBg ?>)">
+            <td style="color:var(--text3);text-align:center;font-weight:600"><?= $i + 1 ?></td>
             <td>
-                <?php
-                    $em = $rec['early_minutes'];
-                    $emoji = $em >= 30 ? '🌟' : ($em >= 15 ? '⭐' : '✨');
-                ?>
-                <span style="color:#059669;font-weight:700"><?= $emoji ?> <?= $em ?> دقيقة</span>
+                <div style="display:flex;align-items:center;gap:10px">
+                    <?php if ($photo): ?>
+                        <img src="<?= SITE_URL ?>/api/serve-file.php?f=<?= urlencode($photo) ?>" alt="" class="td-avatar">
+                    <?php else: ?>
+                        <span class="td-avatar-ph"><?= $initial ?></span>
+                    <?php endif; ?>
+                    <div>
+                        <strong style="color:var(--royal-navy)"><?= htmlspecialchars($rec['employee_name']) ?></strong>
+                        <br><small style="color:var(--text3)"><?= htmlspecialchars($rec['job_title']) ?></small>
+                    </div>
+                </div>
+            </td>
+            <td><span class="emp-card-branch"><?= htmlspecialchars($rec['branch_name'] ?? '-') ?></span></td>
+            <td style="text-align:center"><span style="background:var(--royal-gold-bg);color:var(--royal-gold-dark);padding:3px 12px;border-radius:10px;font-weight:700;font-size:.82rem;border:1px solid rgba(201,168,76,.2)">و<?= $rec['shift_number'] ?? 1 ?></span></td>
+            <td style="color:var(--text2);font-weight:500"><?= $rec['attendance_date'] ?></td>
+            <td style="color:var(--royal-navy);font-weight:700"><?= date('h:i A', strtotime($rec['checkin_time'])) ?></td>
+            <td>
+                <span style="color:#059669;font-weight:800;font-size:.95rem"><?= $emoji ?> <?= $em ?> <small style="font-weight:500">دقيقة</small></span>
             </td>
         </tr>
         <?php endforeach; ?>
         <?php if (empty($records)): ?>
-        <tr><td colspan="7" style="text-align:center;padding:30px;color:var(--text3)">لا يوجد سجلات</td></tr>
+        <tr><td colspan="7" class="report-empty" style="padding:50px"><p>لا يوجد سجلات</p></td></tr>
         <?php endif; ?>
         </tbody>
     </table>
@@ -265,21 +365,26 @@ require __DIR__ . '/../includes/report_print_header.php';
             });
         }
     }
-    if(branchSel) branchSel.addEventListener('change', ()=>{ shiftSel.value = 0; updateShifts(); });
+    if(branchSel) branchSel.addEventListener('change', updateShifts);
     updateShifts();
 })();
 </script>
 
 <style>
 @media print {
-    .sidebar, .topbar, .bottom-nav, form, .no-print { display: none !important; }
+    .sidebar, .topbar, .bottom-nav, form, .no-print, .report-filter { display: none !important; }
     .main-content { margin: 0 !important; }
     .content { padding: 0 !important; }
-    .card { break-inside: avoid; box-shadow: none !important; border: 1px solid #e5dcc8; }
+    .card, .report-table-wrap, .rank-card { break-inside: avoid; box-shadow: none !important; border: 1px solid #e5dcc8; }
     .print-report-header, .print-report-footer { display: block !important; }
-    .content::after { opacity: .035 !important; }
+    .content::after { opacity: .03 !important; }
+    .podium-grid { page-break-inside: avoid; }
 }
 </style>
+
+<?php require __DIR__ . '/../includes/report_print_footer.php'; ?>
+<?php require_once __DIR__ . '/../includes/admin_footer.php'; ?>
+</div></div></body></html>
 
 <?php require __DIR__ . '/../includes/report_print_footer.php'; ?>
 <?php require_once __DIR__ . '/../includes/admin_footer.php'; ?>

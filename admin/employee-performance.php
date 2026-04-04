@@ -215,9 +215,9 @@ require __DIR__ . '/../includes/report_print_header.php';
 <!-- بيانات الموظف -->
 <div class="emp-header">
     <?php if (!empty($emp['profile_photo'])): ?>
-    <img src="<?= SITE_URL ?>/uploads/photos/<?= htmlspecialchars($emp['profile_photo']) ?>" class="emp-photo" alt="">
+    <img src="<?= SITE_URL ?>/api/serve-file.php?f=<?= urlencode($emp['profile_photo']) ?>" class="emp-photo" alt="">
     <?php else: ?>
-    <div class="emp-photo" style="background:var(--primary);display:flex;align-items:center;justify-content:center;color:#fff;font-size:1.5rem;font-weight:800"><?= mb_substr($emp['name'], 0, 1) ?></div>
+    <div class="emp-photo" style="background:linear-gradient(135deg,var(--royal-navy,#0f1b33),#1a2744);display:flex;align-items:center;justify-content:center;color:var(--royal-gold-light,#e8d9a0);font-size:1.5rem;font-weight:800;border:3px solid var(--royal-gold,#c9a84c)"><?= mb_substr($emp['name'], 0, 1) ?></div>
     <?php endif; ?>
     <div class="emp-info">
         <h2><?= htmlspecialchars($emp['name']) ?></h2>

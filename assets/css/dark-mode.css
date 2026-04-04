@@ -343,6 +343,163 @@ html.dark .theme-toggle .icon-moon { display: none; }
     }
 }
 
+/* =============================================================
+   Dark Mode — Royal Premium Overrides
+   ============================================================= */
+
+html.dark {
+    --royal-navy: #0a1224;
+    --royal-navy2: #111d35;
+    --royal-navy3: #1a2744;
+    --royal-gold: #d4b050;
+    --royal-gold-dark: #b89430;
+    --royal-gold-light: #e8d9a0;
+    --royal-gold-bg: rgba(201,168,76,.08);
+    --royal-gold-glow: rgba(201,168,76,.2);
+    --royal-cream: #1a1a1a;
+    --royal-shadow: 0 4px 24px rgba(0,0,0,.3), 0 1px 3px rgba(0,0,0,.2);
+    --royal-shadow-lg: 0 8px 40px rgba(0,0,0,.4);
+    --royal-shadow-xl: 0 20px 60px rgba(0,0,0,.5);
+    --royal-glass: rgba(30,41,59,.8);
+    --royal-gradient: linear-gradient(135deg, #8a7225, #c9a84c, #e8d9a0, #c9a84c, #8a7225);
+}
+
+/* Sidebar dark royal */
+html.dark .sidebar {
+    background: linear-gradient(180deg, #0F172A 0%, #0a1020 100%) !important;
+    border-left-color: rgba(201,168,76,.2) !important;
+}
+html.dark .sidebar-brand {
+    background: linear-gradient(135deg, #060d1a 0%, #0a1224 100%) !important;
+    border-bottom-color: rgba(201,168,76,.3) !important;
+}
+html.dark .nav-item.active {
+    background: rgba(201,168,76,.1) !important;
+    border-color: rgba(201,168,76,.25) !important;
+}
+html.dark .nav-label {
+    color: rgba(201,168,76,.6) !important;
+}
+
+/* Topbar dark */
+html.dark .topbar {
+    background: linear-gradient(180deg, #1E293B 0%, #1a2235 100%) !important;
+    border-bottom-color: rgba(201,168,76,.15) !important;
+}
+
+/* Cards dark royal */
+html.dark .report-filter {
+    background: linear-gradient(180deg, #1E293B 0%, rgba(201,168,76,.04) 100%) !important;
+    border-color: rgba(201,168,76,.2) !important;
+}
+html.dark .report-stat {
+    background: #1E293B !important;
+    border-color: rgba(201,168,76,.15) !important;
+}
+html.dark .report-stat-value {
+    background: linear-gradient(135deg, #E2E8F0 30%, var(--royal-gold)) !important;
+    -webkit-background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+    background-clip: text !important;
+}
+html.dark .report-table-wrap {
+    border-color: rgba(201,168,76,.15) !important;
+}
+html.dark .report-table-wrap thead th {
+    background: linear-gradient(180deg, #1a2235 0%, #151d2e 100%) !important;
+    border-bottom-color: rgba(201,168,76,.3) !important;
+    color: var(--royal-gold-light) !important;
+}
+html.dark .report-table-wrap tbody tr:nth-child(even) {
+    background: rgba(201,168,76,.03) !important;
+}
+html.dark .report-table-wrap tbody tr:hover {
+    background: rgba(201,168,76,.08) !important;
+}
+html.dark .chart-card {
+    border-color: rgba(201,168,76,.15) !important;
+    background: #1E293B !important;
+}
+html.dark .chart-card-title {
+    border-bottom-color: rgba(201,168,76,.2) !important;
+    color: var(--royal-gold-light) !important;
+}
+
+/* Rank cards dark */
+html.dark .rank-card {
+    background: #1E293B !important;
+    border-color: rgba(201,168,76,.2) !important;
+}
+html.dark .rank-card.gold {
+    background: linear-gradient(180deg, #1E293B 0%, rgba(245,158,11,.06) 100%) !important;
+    border-color: rgba(245,158,11,.25) !important;
+}
+html.dark .rank-card.silver {
+    background: linear-gradient(180deg, #1E293B 0%, rgba(148,163,184,.06) 100%) !important;
+    border-color: rgba(148,163,184,.25) !important;
+}
+html.dark .rank-card.bronze {
+    background: linear-gradient(180deg, #1E293B 0%, rgba(234,88,12,.06) 100%) !important;
+    border-color: rgba(234,88,12,.25) !important;
+}
+html.dark .rank-name {
+    color: #E2E8F0 !important;
+}
+html.dark .emp-card-royal {
+    background: #1E293B !important;
+    border-color: rgba(201,168,76,.2) !important;
+}
+html.dark .emp-card-name {
+    color: #E2E8F0 !important;
+}
+html.dark .emp-card-branch {
+    background: rgba(201,168,76,.1) !important;
+    border-color: rgba(201,168,76,.2) !important;
+}
+html.dark .td-avatar-ph {
+    background: linear-gradient(135deg, #0a1224, #111d35) !important;
+}
+
+/* Buttons dark */
+html.dark .btn-primary {
+    background: linear-gradient(135deg, var(--royal-gold) 0%, #8a7225 100%) !important;
+}
+html.dark .btn-export {
+    background: rgba(201,168,76,.1) !important;
+    border-color: rgba(201,168,76,.25) !important;
+    color: var(--royal-gold) !important;
+}
+html.dark .btn-export:hover {
+    background: var(--royal-gold) !important;
+    color: #0a1224 !important;
+}
+
+/* Gold line dark */
+html.dark .royal-divider,
+html.dark .gold-line {
+    opacity: .4;
+}
+
+/* Card title bar dark */
+html.dark .card-title-bar {
+    background: linear-gradient(180deg, var(--royal-gold), #8a7225) !important;
+}
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+[dir="rtl"] @keyframes toastSlideIn {
+    from {
+        opacity: 0;
+        transform: translateX(100%);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
 /* ========== Session Timeout Warning ========== */
 .session-warning {
     position: fixed;
