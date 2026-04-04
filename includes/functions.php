@@ -132,7 +132,7 @@ function isWithinGeofence(float $empLat, float $empLon, ?int $branchId = null): 
  */
 function recordAttendance(int $employeeId, string $type, float $lat, float $lon, float $accuracy = 0): array {
     // التحقق من صحة نوع التسجيل
-    $validTypes = ['in', 'out', 'overtime-start', 'overtime-end'];
+    $validTypes = ['in', 'out'];
     if (!in_array($type, $validTypes, true)) {
         return ['success' => false, 'message' => 'نوع تسجيل غير صالح'];
     }
@@ -369,22 +369,13 @@ function detectActiveShift(array $shifts): ?array {
  * يكتشف الوردية النشطة تلقائياً حسب الوقت
  */
 function getBranchSchedule(?int $branchId = null): array {
-    $defaults = [
-        'allow_overtime'       => true,
-        'overtime_start_after' => 60,
-        'overtime_min_duration'=> 30,
-    ];
+    $defaults = [];
 
     if ($branchId) {
         // جلب ورديات الفرع
         $stmt = db()->prepare("SELECT shift_number, shift_start, shift_end FROM branch_shifts WHERE branch_id = ? AND is_active = 1 ORDER BY shift_number ASC");
         $stmt->execute([$branchId]);
         $shifts = $stmt->fetchAll();
-
-        // جلب إعدادات الدوام الإضافي من الفرع
-        $brStmt = db()->prepare("SELECT allow_overtime, overtime_start_after, overtime_min_duration FROM branches WHERE id = ? AND is_active = 1");
-        $brStmt->execute([$branchId]);
-        $brData = $brStmt->fetch();
 
         if ($shifts) {
             $active = detectActiveShift($shifts);
@@ -393,9 +384,6 @@ function getBranchSchedule(?int $branchId = null): array {
                 'work_end_time'        => $active['shift_end'],
                 'current_shift'        => (int)$active['shift_number'],
                 'shifts'               => $shifts,
-                'allow_overtime'       => $brData ? (bool)$brData['allow_overtime'] : true,
-                'overtime_start_after' => $brData ? (int)$brData['overtime_start_after'] : 60,
-                'overtime_min_duration'=> $brData ? (int)$brData['overtime_min_duration'] : 30,
             ];
         }
     }
@@ -408,9 +396,6 @@ function getBranchSchedule(?int $branchId = null): array {
         'work_end_time'        => $fallbackEnd,
         'current_shift'        => 1,
         'shifts'               => [['shift_number' => 1, 'shift_start' => $fallbackStart, 'shift_end' => $fallbackEnd]],
-        'allow_overtime'       => true,
-        'overtime_start_after' => 60,
-        'overtime_min_duration'=> 30,
     ];
 }
 

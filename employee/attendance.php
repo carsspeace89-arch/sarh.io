@@ -27,7 +27,8 @@ $branchId       = ($employee && !empty($employee['branch_id'])) ? (int)$employee
 $schedule       = getBranchSchedule($branchId);
 $workStart      = $schedule['work_start_time'];
 $workEnd        = $schedule['work_end_time'];
-$allowOvertime  = $schedule['allow_overtime'];
+$allShifts      = $schedule['shifts'] ?? [];
+$currentShift   = $schedule['current_shift'] ?? 1;
 
 $workLat        = (float) getSystemSetting('work_latitude',  '24.572307');
 $workLon        = (float) getSystemSetting('work_longitude', '46.602552');
@@ -54,12 +55,35 @@ $historyRecords = [];
 if ($employee) {
   $stmt = db()->prepare("SELECT type, timestamp FROM attendances WHERE employee_id=? AND attendance_date=CURDATE() ORDER BY timestamp ASC");
   $stmt->execute([$employee['id']]);
-  foreach ($stmt->fetchAll() as $rec) {
-    if ($rec['type'] === 'in'  && !$checkInTime)  $checkInTime  = $rec['timestamp'];
-    if ($rec['type'] === 'out')                    $checkOutTime = $rec['timestamp'];
+  $allRecords = $stmt->fetchAll();
+  $lastIn = null; $lastOut = null;
+  foreach ($allRecords as $rec) {
+    if ($rec['type'] === 'in')  { if (!$checkInTime) $checkInTime = $rec['timestamp']; $lastIn = $rec['timestamp']; }
+    if ($rec['type'] === 'out') { $checkOutTime = $rec['timestamp']; $lastOut = $rec['timestamp']; }
   }
-  if ($checkOutTime)    $todayStatus = 'checked_out';
-  elseif ($checkInTime) $todayStatus = 'checked_in';
+  // حالة الموظف: إذا آخر سجل out وهناك وردية أخرى متاحة → يمكنه تسجيل دخول جديد
+  if ($lastOut && $lastOut > ($lastIn ?? '')) {
+    // تحقق هل الوردية الحالية تختلف عن وردية آخر تسجيل دخول
+    $lastInShift = null;
+    if ($lastIn) {
+      $lastInMin = (int)date('H', strtotime($lastIn)) * 60 + (int)date('i', strtotime($lastIn));
+      foreach ($allShifts as $s) {
+        $ss = timeToMinutes($s['shift_start']); $se = timeToMinutes($s['shift_end']);
+        $ew = ($ss - 90 + 1440) % 1440;
+        if ($se < $ew) { if ($lastInMin >= $ew || $lastInMin <= $se) { $lastInShift = (int)$s['shift_number']; break; } }
+        else { if ($lastInMin >= $ew && $lastInMin <= $se) { $lastInShift = (int)$s['shift_number']; break; } }
+      }
+    }
+    if ($lastInShift !== null && $currentShift !== $lastInShift) {
+      $todayStatus = 'none'; // وردية جديدة → سمح بتسجيل دخول
+      $checkInTime = null; $checkOutTime = null;
+      $workStart = $schedule['work_start_time']; $workEnd = $schedule['work_end_time'];
+    } else {
+      $todayStatus = 'checked_out';
+    }
+  } elseif ($lastIn) {
+    $todayStatus = 'checked_in';
+  }
 
   $stmtH = db()->prepare("SELECT type, timestamp FROM attendances WHERE employee_id=? AND attendance_date=CURDATE() ORDER BY timestamp DESC LIMIT 6");
   $stmtH->execute([$employee['id']]);
@@ -77,7 +101,6 @@ $jsConfig = json_encode([
   'geofenceRadius' => $geofenceRadius,
   'workEnd'        => $workEnd,
   'showCheckout'   => false,
-  'allowOvertime'  => $allowOvertime,
   'branchName'     => $branchName,
 ], JSON_UNESCAPED_UNICODE);
 
@@ -185,11 +208,6 @@ $badgeClass = $todayStatus === 'checked_in' ? 'in' : ($todayStatus === 'checked_
           </button>
           <?php if ($todayStatus === 'checked_in'): ?>
             <div class="done-msg" data-i18n="auto_checkout_note">سيتم تسجيل الانصراف تلقائياً عند <?= htmlspecialchars($workEnd) ?></div>
-          <?php elseif ($allowOvertime && $todayStatus === 'checked_out'): ?>
-            <button class="btn btn-overtime" id="btnOvertime" onclick="submitAttendance('overtime', true)" disabled>
-              <span class="btn-icon">&#x23F0;</span>
-              <span data-i18n="btn_overtime"></span>
-            </button>
           <?php elseif ($todayStatus === 'checked_out'): ?>
             <div class="done-msg" data-i18n="shift_done"></div>
           <?php endif; ?>
@@ -389,7 +407,6 @@ $badgeClass = $todayStatus === 'checked_in' ? 'in' : ($todayStatus === 'checked_
         verifyDevice: '<?= SITE_URL ?>/api/verify-device.php',
         checkIn: '<?= SITE_URL ?>/api/check-in.php',
         checkOut: '<?= SITE_URL ?>/api/check-out.php',
-        ot: '<?= SITE_URL ?>/api/ot.php',
         errorReport: '<?= SITE_URL ?>/api/error-report.php',
         logoUrl: '<?= SITE_URL ?>/assets/images/loogo.png',
         worker: '<?= SITE_URL ?>/worker.js',

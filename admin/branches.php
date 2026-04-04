@@ -28,9 +28,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $lat      = (float)($_POST['latitude'] ?? 0);
             $lon      = (float)($_POST['longitude'] ?? 0);
             $radius   = (int)($_POST['geofence_radius'] ?? 25);
-            $allowOT  = (int)($_POST['allow_overtime'] ?? 1);
-            $otAfter  = (int)($_POST['overtime_start_after'] ?? 60);
-            $otMin    = (int)($_POST['overtime_min_duration'] ?? 30);
 
             if ($lat < -90 || $lat > 90 || $lon < -180 || $lon > 180) {
                 $message = 'إحداثيات غير صالحة. خط العرض يجب أن يكون بين -90 و 90، وخط الطول بين -180 و 180';
@@ -40,8 +37,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $msgType = 'error';
             } elseif ($name && $lat != 0 && $lon != 0) {
                 try {
-                    $stmt = db()->prepare("INSERT INTO branches (name, latitude, longitude, geofence_radius, allow_overtime, overtime_start_after, overtime_min_duration) VALUES (?,?,?,?,?,?,?)");
-                    $stmt->execute([$name, $lat, $lon, $radius, $allowOT, $otAfter, $otMin]);
+                    $stmt = db()->prepare("INSERT INTO branches (name, latitude, longitude, geofence_radius) VALUES (?,?,?,?)");
+                    $stmt->execute([$name, $lat, $lon, $radius]);
                     $newBranchId = db()->lastInsertId();
 
                     // حفظ الورديات
@@ -206,11 +203,6 @@ L.Icon.Default.mergeOptions({
                 <?php else: ?>
                     <div style="font-size:.78rem;color:var(--text3)">لا توجد ورديات</div>
                 <?php endif; ?>
-                <div class="bc-section">الدوام الإضافي</div>
-                <div class="bc-info-grid">
-                    <div class="bc-info"><div class="bc-label">مسموح</div><div class="bc-val"><?= $b['allow_overtime'] ? 'نعم' : 'لا' ?></div></div>
-                    <div class="bc-info"><div class="bc-label">يبدأ بعد</div><div class="bc-val"><?= $b['overtime_start_after'] ?> دقيقة</div></div>
-                </div>
             </div>
             <div class="bc-actions">
                 <a class="btn btn-secondary btn-sm" href="branch-edit.php?id=<?= (int)$b['id'] ?>">تعديل</a>
@@ -288,21 +280,6 @@ L.Icon.Default.mergeOptions({
                     <div class="form-group"><label class="form-label">إلى</label><input class="form-control" type="time" name="shift_end_3"></div>
                 </div>
 
-                <div class="form-section">الدوام الإضافي</div>
-                <div class="form-row col3">
-                    <div class="form-group">
-                        <label class="form-label">مسموح</label>
-                        <select class="form-control" name="allow_overtime"><option value="1">نعم</option><option value="0">لا</option></select>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">يبدأ بعد (دقيقة)</label>
-                        <input class="form-control" type="number" name="overtime_start_after" value="60" min="0">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">الحد الأدنى (دقيقة)</label>
-                        <input class="form-control" type="number" name="overtime_min_duration" value="30" min="0">
-                    </div>
-                </div>
             </div>
             <div class="modal-branch-foot">
                 <button type="button" class="btn btn-secondary" onclick="closeModal('addModal')">إلغاء</button>

@@ -27,7 +27,7 @@ class AttendanceService
      */
     public function record(int $employeeId, string $type, float $lat, float $lon, float $accuracy = 0): array
     {
-        $validTypes = ['in', 'out', 'overtime-start', 'overtime-end'];
+        $validTypes = ['in', 'out'];
         if (!in_array($type, $validTypes, true)) {
             return ['success' => false, 'message' => 'نوع تسجيل غير صالح'];
         }
@@ -62,8 +62,6 @@ class AttendanceService
         $messages = [
             'in' => 'تم تسجيل الدخول بنجاح',
             'out' => 'تم تسجيل الانصراف بنجاح',
-            'overtime-start' => 'تم بدء الوقت الإضافي',
-            'overtime-end' => 'تم إنهاء الوقت الإضافي',
         ];
 
         return [

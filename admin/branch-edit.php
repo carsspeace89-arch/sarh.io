@@ -25,9 +25,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $lat      = (float)($_POST['latitude'] ?? 0);
     $lon      = (float)($_POST['longitude'] ?? 0);
     $radius   = (int)($_POST['geofence_radius'] ?? 25);
-    $allowOT  = (int)($_POST['allow_overtime'] ?? 1);
-    $otAfter  = (int)($_POST['overtime_start_after'] ?? 60);
-    $otMin    = (int)($_POST['overtime_min_duration'] ?? 30);
     $active   = (int)($_POST['is_active'] ?? 1);
 
     if (!$name) {
@@ -43,8 +40,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $stmt = db()->prepare("UPDATE branches SET name=?, latitude=?, longitude=?, geofence_radius=?, allow_overtime=?, overtime_start_after=?, overtime_min_duration=?, is_active=? WHERE id=?");
-    $stmt->execute([$name, $lat, $lon, $radius, $allowOT, $otAfter, $otMin, $active, $branchId]);
+    $stmt = db()->prepare("UPDATE branches SET name=?, latitude=?, longitude=?, geofence_radius=?, is_active=? WHERE id=?");
+    $stmt->execute([$name, $lat, $lon, $radius, $active, $branchId]);
 
     // تحديث الورديات
     db()->prepare("DELETE FROM branch_shifts WHERE branch_id = ?")->execute([$branchId]);
@@ -185,25 +182,6 @@ L.Icon.Default.mergeOptions({
                     </div>
                 </div>
                 <?php endfor; ?>
-
-                <div class="form-section">الدوام الإضافي</div>
-                <div class="form-row col3">
-                    <div class="form-group">
-                        <label class="form-label">مسموح</label>
-                        <select class="form-control" name="allow_overtime">
-                            <option value="1" <?= (int)$branch['allow_overtime'] === 1 ? 'selected' : '' ?>>نعم</option>
-                            <option value="0" <?= (int)$branch['allow_overtime'] === 0 ? 'selected' : '' ?>>لا</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">يبدأ بعد (دقيقة)</label>
-                        <input class="form-control" type="number" name="overtime_start_after" value="<?= (int)$branch['overtime_start_after'] ?>" min="0">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">الحد الأدنى (دقيقة)</label>
-                        <input class="form-control" type="number" name="overtime_min_duration" value="<?= (int)$branch['overtime_min_duration'] ?>" min="0">
-                    </div>
-                </div>
 
                 <div class="form-row">
                     <div class="form-group">

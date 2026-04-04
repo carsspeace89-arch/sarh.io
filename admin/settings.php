@@ -39,13 +39,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $message = 'تم حفظ إعدادات أوقات الدوام'; $msgType = 'success';
         }
 
-        if ($action === 'save_overtime') {
-            setSystemSetting('allow_overtime',        sanitize($_POST['allow_overtime'] ?? '0'));
-            setSystemSetting('overtime_start_after',  sanitize($_POST['overtime_start_after'] ?? '60'));
-            setSystemSetting('overtime_min_duration', sanitize($_POST['overtime_min_duration'] ?? '30'));
-            $message = 'تم حفظ إعدادات الدوام الإضافي'; $msgType = 'success';
-        }
-
         if ($action === 'save_general') {
             setSystemSetting('site_name',     sanitize($_POST['site_name'] ?? 'نظام الحضور'));
             setSystemSetting('company_name',  sanitize($_POST['company_name'] ?? ''));
@@ -101,10 +94,6 @@ $ciEnd     = getSystemSetting('check_in_end_time',   '10:00');
 $coStart   = getSystemSetting('check_out_start_time','15:00');
 $coEnd     = getSystemSetting('check_out_end_time',  '20:00');
 $coShowBefore = getSystemSetting('checkout_show_before', '30');
-
-$allowOT   = getSystemSetting('allow_overtime',        '1');
-$otAfter   = getSystemSetting('overtime_start_after',  '60');
-$otMinDur  = getSystemSetting('overtime_min_duration', '30');
 
 $siteName    = getSystemSetting('site_name',    SITE_NAME);
 $companyName = getSystemSetting('company_name', '');
@@ -225,7 +214,6 @@ require_once __DIR__ . '/../includes/admin_layout.php';
 <div class="settings-tabs">
     <button class="tab-btn active" onclick="showTab('geo')">الموقع الجغرافي</button>
     <button class="tab-btn" onclick="showTab('time')">أوقات الدوام</button>
-    <button class="tab-btn" onclick="showTab('overtime')">الدوام الإضافي</button>
     <button class="tab-btn" onclick="showTab('attendance')">معايير الحضور</button>
     <button class="tab-btn" onclick="showTab('general')">إعدادات عامة</button>
     <button class="tab-btn" onclick="showTab('password')">كلمة المرور</button>
@@ -361,45 +349,6 @@ require_once __DIR__ . '/../includes/admin_layout.php';
             </div>
 
             <button type="submit" class="btn btn-primary">حفظ أوقات الدوام</button>
-        </form>
-    </div>
-</div>
-
-<!-- =================== إعدادات الدوام الإضافي =================== -->
-<div class="tab-content" id="tab-overtime">
-    <div class="card">
-        <div class="card-header"><span class="card-title"><span class="card-title-bar"></span> الدوام الإضافي (افتراضي)</span></div>
-        
-        <div class="scope-note">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="#D97706"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
-            <span>إعدادات الدوام الإضافي الافتراضية. يُمكن تخصيصها لكل فرع من <a href="branches.php">إدارة الفروع</a>.</span>
-        </div>
-
-        <form method="POST">
-            <input type="hidden" name="csrf_token" value="<?= $csrf ?>">
-            <input type="hidden" name="action" value="save_overtime">
-
-            <div class="form-group">
-                <label class="form-label">السماح بالدوام الإضافي</label>
-                <select class="form-control" name="allow_overtime" style="max-width:300px">
-                    <option value="1" <?= $allowOT == '1' ? 'selected' : '' ?>>مفعّل</option>
-                    <option value="0" <?= $allowOT == '0' ? 'selected' : '' ?>>معطّل</option>
-                </select>
-            </div>
-
-            <div class="form-grid-2">
-                <div class="form-group">
-                    <label class="form-label">يبدأ احتساب الإضافي بعد (دقيقة)</label>
-                    <input class="form-control" type="number" name="overtime_start_after" value="<?= $otAfter ?>" min="0" max="300">
-                    <small style="color:var(--text3)">بعد نهاية الدوام الرسمي</small>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">الحد الأدنى لاحتساب الإضافي (دقيقة)</label>
-                    <input class="form-control" type="number" name="overtime_min_duration" value="<?= $otMinDur ?>" min="15" max="120">
-                </div>
-            </div>
-
-            <button type="submit" class="btn btn-primary">حفظ إعدادات الدوام الإضافي</button>
         </form>
     </div>
 </div>

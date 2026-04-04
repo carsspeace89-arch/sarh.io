@@ -291,7 +291,6 @@ body{
 .btn-hidden{display:none!important}
 .btn-in      {background:linear-gradient(135deg,#059669,#047857);color:#fff;box-shadow:0 4px 20px rgba(5,150,105,.25)}
 .btn-out     {background:linear-gradient(135deg,#DC2626,#B91C1C);color:#fff;box-shadow:0 4px 20px rgba(220,38,38,.25)}
-.btn-overtime{background:linear-gradient(135deg,#7C3AED,#6D28D9);color:#fff;box-shadow:0 4px 20px rgba(124,58,237,.25)}
 .done-msg{
   flex:1;text-align:center;padding:14px;color:#94A3B8;
   font-size:.78rem;border:1px dashed rgba(100,116,139,.2);border-radius:14px;
@@ -341,9 +340,6 @@ body{
 }
 .type-in          {color:#16A34A;font-weight:700}
 .type-out         {color:#DC2626;font-weight:700}
-.type-overtime    {color:#7C3AED;font-weight:700}
-.type-overtime-start{color:#7C3AED;font-weight:700}
-.type-overtime-end  {color:#6366F1;font-weight:700}
 .hist-time        {color:#94A3B8}
 
 /* ── ERROR ── */

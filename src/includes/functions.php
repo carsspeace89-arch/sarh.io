@@ -132,7 +132,7 @@ function isWithinGeofence(float $empLat, float $empLon, ?int $branchId = null): 
  */
 function recordAttendance(int $employeeId, string $type, float $lat, float $lon, float $accuracy = 0): array {
     // التحقق من صحة نوع التسجيل
-    $validTypes = ['in', 'out', 'overtime-start', 'overtime-end'];
+    $validTypes = ['in', 'out'];
     if (!in_array($type, $validTypes, true)) {
         return ['success' => false, 'message' => 'نوع تسجيل غير صالح'];
     }

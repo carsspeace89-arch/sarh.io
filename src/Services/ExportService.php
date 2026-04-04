@@ -39,8 +39,6 @@ class ExportService
         $typeLabels = [
             'in' => 'حضور',
             'out' => 'انصراف',
-            'overtime-start' => 'بداية إضافي',
-            'overtime-end' => 'نهاية إضافي',
         ];
 
         foreach ($records as $r) {
@@ -92,8 +90,6 @@ class ExportService
         $typeLabels = [
             'in' => 'حضور',
             'out' => 'انصراف',
-            'overtime-start' => 'بداية إضافي',
-            'overtime-end' => 'نهاية إضافي',
         ];
 
         $safeName = preg_replace('/[^a-zA-Z0-9_\-.]/', '_', str_replace('.xlsx', '.xls', $filename));
@@ -208,8 +204,6 @@ class ExportService
         $typeLabels = [
             'in' => 'حضور',
             'out' => 'انصراف',
-            'overtime-start' => 'بداية إضافي',
-            'overtime-end' => 'نهاية إضافي',
         ];
 
         echo $this->exportPrintable($records, $title, $dateRange);

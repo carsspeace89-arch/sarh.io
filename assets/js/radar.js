@@ -18,11 +18,10 @@ const LANG = {
     gps_error:'خطأ في الموقع', gps_failed:'تعذّر تحديد موقعك',
     inside_zone:'✅ أنت داخل نطاق العمل',
     outside_zone_pre:'⚠ تبعد ', outside_zone_suf:' م عن النطاق',
-    btn_checkin:'تسجيل الحضور', btn_checkout:'تسجيل الانصراف', btn_overtime:'دوام إضافي',
+    btn_checkin:'تسجيل الحضور', btn_checkout:'تسجيل الانصراف',
     shift_done:'تم إنهاء دوامك اليوم',
     checkout_countdown:'الانصراف بعد:', work_duration:'مدة الدوام:',
-    type_in:'▶ حضور', type_out:'◀ انصراف', type_overtime:'⏰ إضافي',
-    'type_overtime-start':'⏰ بدء إضافي', 'type_overtime-end':'⏰ نهاية إضافي',
+    type_in:'▶ حضور', type_out:'◀ انصراف',
     error_title:'رابط غير صالح',
     error_invalid_link:'رابط غير صالح. يرجى التحقق من الرابط المرسل.',
     error_expired_link:'الرابط غير صحيح أو انتهت صلاحيته. تواصل مع المدير.',
@@ -53,11 +52,10 @@ const LANG = {
     gps_error:'Location error', gps_failed:'Could not get location',
     inside_zone:'✅ Within work zone',
     outside_zone_pre:'⚠ ', outside_zone_suf:' m away',
-    btn_checkin:'Check In', btn_checkout:'Check Out', btn_overtime:'Overtime',
+    btn_checkin:'Check In', btn_checkout:'Check Out',
     shift_done:'Shift completed for today',
     checkout_countdown:'Check-out in:', work_duration:'Duration:',
-    type_in:'▶ In', type_out:'◀ Out', type_overtime:'⏰ OT',
-    'type_overtime-start':'⏰ OT Start', 'type_overtime-end':'⏰ OT End',
+    type_in:'▶ In', type_out:'◀ Out',
     error_title:'Invalid Link',
     error_invalid_link:'Invalid link.',
     error_expired_link:'Link invalid or expired.',
@@ -806,7 +804,7 @@ function submitAttendance(type, manual) {
   var sp = document.getElementById('spinner'); if (sp && manual) sp.classList.add('show');
   if (manual) hideMsg();
   function doPost(la, lo, ac) {
-    var ep = type === 'in' ? URLS.checkIn : type === 'out' ? URLS.checkOut : URLS.ot;
+    var ep = type === 'in' ? URLS.checkIn : URLS.checkOut;
     fetch(ep, {method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({token: CFG.token, latitude: la, longitude: lo, accuracy: ac || 0})})
     .then(function(r){ return r.json(); })
