@@ -31,7 +31,8 @@ $count = 0;
 // ================================================================
 try {
     $lateStmt = db()->prepare("
-        SELECT a.employee_id, e.name, a.late_minutes, b.name AS branch_name
+        SELECT a.employee_id, e.name, e.branch_id, a.late_minutes, a.timestamp,
+               b.name AS branch_name
         FROM attendances a
         JOIN employees e ON a.employee_id = e.id
         LEFT JOIN branches b ON e.branch_id = b.id
@@ -41,13 +42,23 @@ try {
     ");
     $lateStmt->execute([$today]);
 
+    // جلب ورديات الفروع لتحديد الوردية
+    $notifBranchShifts = [];
+    $nBsStmt = db()->query("SELECT branch_id, shift_number, shift_start, shift_end FROM branch_shifts WHERE is_active = 1 ORDER BY branch_id, shift_number");
+    foreach ($nBsStmt->fetchAll() as $s) {
+        $notifBranchShifts[$s['branch_id']][] = $s;
+    }
+
     foreach ($lateStmt->fetchAll() as $l) {
         $check = db()->prepare("SELECT id FROM notifications WHERE category = 'late' AND link = ? AND DATE(created_at) = ?");
         $check->execute(['employee-profile.php?id=' . $l['employee_id'], $today]);
         if (!$check->fetch()) {
+            $nShifts = $notifBranchShifts[$l['branch_id']] ?? [];
+            $nShiftNum = !empty($nShifts) ? assignTimeToShift(date('H:i', strtotime($l['timestamp'])), $nShifts) : 1;
+            $shiftLabel = ' (الوردية ' . $nShiftNum . ')';
             db()->prepare("INSERT INTO notifications (title, message, type, category, link) VALUES (?, ?, 'warning', 'late', ?)")->execute([
                 'تأخير: ' . $l['name'],
-                'تأخر ' . $l['name'] . ' بمقدار ' . $l['late_minutes'] . ' دقيقة في فرع ' . ($l['branch_name'] ?? 'غير محدد'),
+                'تأخر ' . $l['name'] . ' بمقدار ' . $l['late_minutes'] . ' دقيقة في فرع ' . ($l['branch_name'] ?? 'غير محدد') . $shiftLabel,
                 'employee-profile.php?id=' . $l['employee_id']
             ]);
             $count++;

@@ -56,8 +56,8 @@ $liveCheckins = $liveStmt->fetchAll();
 
 // آخر 15 تسجيل
 $recentStmt = db()->prepare("
-    SELECT a.type, a.timestamp, a.latitude, a.longitude,
-           e.name AS employee_name, e.job_title,
+    SELECT a.type, a.timestamp, a.latitude, a.longitude, a.employee_id,
+           e.name AS employee_name, e.job_title, e.branch_id,
            b.name AS branch_name
     FROM attendances a
     JOIN employees e ON a.employee_id = e.id
@@ -68,6 +68,13 @@ $recentStmt = db()->prepare("
 ");
 $recentStmt->execute();
 $recentRecords = $recentStmt->fetchAll();
+
+// جلب ورديات الفروع لتحديد الوردية لكل سجل
+$dashBranchShifts = [];
+$dBsStmt = db()->query("SELECT branch_id, shift_number, shift_start, shift_end FROM branch_shifts WHERE is_active = 1 ORDER BY branch_id, shift_number");
+foreach ($dBsStmt->fetchAll() as $s) {
+    $dashBranchShifts[$s['branch_id']][] = $s;
+}
 
 // غائبون اليوم
 $absentStmt = db()->prepare("
@@ -399,15 +406,19 @@ require_once __DIR__ . '/../includes/admin_layout.php';
         </div>
         <div style="overflow-x:auto">
         <table>
-            <thead><tr><th>الموظف</th><th>الفرع</th><th>النوع</th><th>الوقت</th></tr></thead>
+            <thead><tr><th>الموظف</th><th>الفرع</th><th>الوردية</th><th>النوع</th><th>الوقت</th></tr></thead>
             <tbody id="recentTableBody">
             <?php if (empty($recentRecords)): ?>
-                <tr><td colspan="4" style="text-align:center;color:var(--text3);padding:20px">لا توجد تسجيلات اليوم</td></tr>
+                <tr><td colspan="5" style="text-align:center;color:var(--text3);padding:20px">لا توجد تسجيلات اليوم</td></tr>
             <?php else: ?>
-                <?php foreach ($recentRecords as $rec): ?>
+                <?php foreach ($recentRecords as $rec):
+                    $recBShifts = $dashBranchShifts[$rec['branch_id']] ?? [];
+                    $recShiftNum = !empty($recBShifts) ? assignTimeToShift(date('H:i', strtotime($rec['timestamp'])), $recBShifts) : 1;
+                ?>
                 <tr data-ts="<?= htmlspecialchars($rec['timestamp']) ?>">
                     <td><strong><?= htmlspecialchars($rec['employee_name']) ?></strong><br><small style="color:var(--text3)"><?= htmlspecialchars($rec['job_title']) ?></small></td>
                     <td style="font-size:.78rem;color:var(--text2)"><?= htmlspecialchars($rec['branch_name'] ?? '-') ?></td>
+                    <td style="text-align:center;font-weight:600;color:var(--primary)">و<?= $recShiftNum ?></td>
                     <td><span class="badge <?= $rec['type'] === 'in' ? 'badge-green' : 'badge-red' ?>"><?= $rec['type'] === 'in' ? 'دخول' : 'انصراف' ?></span></td>
                     <td style="color:var(--text3);font-size:.8rem"><?= date('h:i A', strtotime($rec['timestamp'])) ?></td>
                 </tr>

@@ -31,11 +31,24 @@ function getLateRecords(array $extraWhere = [], array $extraParams = [], string 
     foreach ($extraParams as $p) $params[] = $p;
     $sql = "SELECT e.id AS employee_id, e.name AS employee_name, e.job_title,
                    b.name AS branch_name,
-                   DATE_FORMAT(DATE_SUB(a.timestamp, INTERVAL a.late_minutes MINUTE), '%H:%i') AS work_start_time,
+                   COALESCE(
+                       DATE_FORMAT(bs.shift_start, '%H:%i'),
+                       DATE_FORMAT(DATE_SUB(a.timestamp, INTERVAL a.late_minutes MINUTE), '%H:%i')
+                   ) AS work_start_time,
+                   COALESCE(bs.shift_number, 1) AS shift_number,
                    a.attendance_date, a.timestamp AS checkin_time, a.late_minutes
             FROM attendances a
             INNER JOIN employees e ON a.employee_id = e.id
             LEFT JOIN branches b ON e.branch_id = b.id
+            LEFT JOIN branch_shifts bs ON bs.branch_id = e.branch_id AND bs.is_active = 1
+                AND bs.shift_number = (
+                    SELECT bs2.shift_number FROM branch_shifts bs2 
+                    WHERE bs2.branch_id = e.branch_id AND bs2.is_active = 1
+                    ORDER BY ABS(TIMESTAMPDIFF(MINUTE, 
+                        CONCAT(a.attendance_date, ' ', bs2.shift_start), 
+                        a.timestamp)) 
+                    LIMIT 1
+                )
             WHERE e.is_active = 1 AND e.deleted_at IS NULL AND " . implode(' AND ', $where) . "
             ORDER BY a.attendance_date ASC, e.name ASC";
     $stmt = db()->prepare($sql);
@@ -342,6 +355,7 @@ function fmtMins(int $m): string
                 <th>اليوم</th>
                 <th>الموظف</th>
                 <th>الفرع</th>
+                <th>الوردية</th>
                 <th>بداية الدوام</th>
                 <th>وقت الحضور</th>
                 <th>التأخير</th>
@@ -358,6 +372,7 @@ function fmtMins(int $m): string
                 <td style="font-size:10px;color:#64748B"><?= $days[date('w',strtotime($r['attendance_date']))] ?></td>
                 <td><strong><?= htmlspecialchars($r['employee_name']) ?></strong></td>
                 <td style="font-size:10px"><?= htmlspecialchars($r['branch_name'] ?? '-') ?></td>
+                <td style="text-align:center;font-weight:600;color:#1a2744">و<?= $r['shift_number'] ?? 1 ?></td>
                 <td style="font-family:monospace;color:#64748B"><?= $r['work_start_time'] ?? '-' ?></td>
                 <td style="font-family:monospace;font-weight:700;color:#1a2744"><?= date('H:i:s', strtotime($r['checkin_time'])) ?></td>
                 <td><span class="late-badge <?= $cls ?>"><?= fmtMins($lm) ?></span></td>

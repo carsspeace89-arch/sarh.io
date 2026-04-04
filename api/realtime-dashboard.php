@@ -26,7 +26,7 @@ $branchCount = (int)db()->query("SELECT COUNT(*) FROM branches WHERE is_active =
 // آخر 15 تسجيل
 $recentStmt = db()->prepare("
     SELECT a.type, a.timestamp, a.latitude, a.longitude,
-           e.name AS employee_name, e.job_title,
+           e.name AS employee_name, e.job_title, e.branch_id,
            b.name AS branch_name
     FROM attendances a
     JOIN employees e ON a.employee_id = e.id
@@ -38,13 +38,23 @@ $recentStmt = db()->prepare("
 $recentStmt->execute();
 $recentRecords = $recentStmt->fetchAll();
 
+// جلب ورديات الفروع لتحديد الوردية
+$rtBranchShifts = [];
+$rtBsStmt = db()->query("SELECT branch_id, shift_number, shift_start, shift_end FROM branch_shifts WHERE is_active = 1 ORDER BY branch_id, shift_number");
+foreach ($rtBsStmt->fetchAll() as $s) {
+    $rtBranchShifts[$s['branch_id']][] = $s;
+}
+
 // تنسيق السجلات
 $records = [];
 foreach ($recentRecords as $rec) {
+    $recBShifts = $rtBranchShifts[$rec['branch_id']] ?? [];
+    $shiftNum = !empty($recBShifts) ? assignTimeToShift(date('H:i', strtotime($rec['timestamp'])), $recBShifts) : 1;
     $records[] = [
         'employee_name' => $rec['employee_name'],
         'job_title'     => $rec['job_title'],
         'branch_name'   => $rec['branch_name'] ?? '-',
+        'shift_number'  => $shiftNum,
         'type'          => $rec['type'],
         'time'          => date('h:i A', strtotime($rec['timestamp'])),
         'timestamp'     => $rec['timestamp'],

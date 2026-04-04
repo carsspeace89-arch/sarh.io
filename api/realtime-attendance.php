@@ -43,7 +43,7 @@ $totalPages = (int)ceil($total / $perPage);
 
 // النتائج
 $recStmt = db()->prepare("
-    SELECT a.*, e.name AS employee_name, e.job_title, b.name AS branch_name
+    SELECT a.*, e.name AS employee_name, e.job_title, e.branch_id, b.name AS branch_name
     FROM attendances a
     JOIN employees e ON a.employee_id = e.id
     LEFT JOIN branches b ON e.branch_id = b.id
@@ -53,6 +53,13 @@ $recStmt = db()->prepare("
 ");
 $recStmt->execute(array_merge($params, [$perPage, $offset]));
 $records = $recStmt->fetchAll();
+
+// جلب ورديات الفروع
+$rtaBranchShifts = [];
+$rtaBsStmt = db()->query("SELECT branch_id, shift_number, shift_start, shift_end FROM branch_shifts WHERE is_active = 1 ORDER BY branch_id, shift_number");
+foreach ($rtaBsStmt->fetchAll() as $s) {
+    $rtaBranchShifts[$s['branch_id']][] = $s;
+}
 
 // إحصائيات الفترة
 $statsStmt = db()->prepare("
@@ -69,11 +76,14 @@ $periodStats = $statsStmt->fetch();
 // تنسيق السجلات
 $formatted = [];
 foreach ($records as $i => $rec) {
+    $recShifts = $rtaBranchShifts[$rec['branch_id']] ?? [];
+    $shiftNum = !empty($recShifts) ? assignTimeToShift(date('H:i', strtotime($rec['timestamp'])), $recShifts) : 1;
     $formatted[] = [
         'index'         => $offset + $i + 1,
         'employee_name' => $rec['employee_name'],
         'job_title'     => $rec['job_title'],
         'branch_name'   => $rec['branch_name'] ?? '-',
+        'shift_number'  => $shiftNum,
         'type'          => $rec['type'],
         'date'          => date('Y/m/d', strtotime($rec['timestamp'])),
         'time'          => date('h:i A', strtotime($rec['timestamp'])),

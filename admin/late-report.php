@@ -74,6 +74,7 @@ $stmt = db()->prepare("
             DATE_FORMAT(bs.shift_start, '%H:%i'),
             DATE_FORMAT(DATE_SUB(a.timestamp, INTERVAL a.late_minutes MINUTE), '%H:%i')
         ) AS work_start_time,
+        COALESCE(bs.shift_number, 1) AS shift_number,
         a.attendance_date,
         a.timestamp AS checkin_time,
         a.late_minutes
@@ -132,13 +133,14 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
     header('Content-Disposition: attachment; filename="late_report_' . $dateFrom . '_' . $dateTo . '.csv"');
     $out = fopen('php://output', 'w');
     fprintf($out, chr(0xEF) . chr(0xBB) . chr(0xBF));
-    fputcsv($out, ['التاريخ', 'الموظف', 'الوظيفة', 'الفرع', 'وقت الحضور', 'بداية الدوام', 'التأخير (دقيقة)']);
+    fputcsv($out, ['التاريخ', 'الموظف', 'الوظيفة', 'الفرع', 'الوردية', 'وقت الحضور', 'بداية الدوام', 'التأخير (دقيقة)']);
     foreach ($lateRecords as $rec) {
         fputcsv($out, [
             $rec['attendance_date'],
             $rec['employee_name'],
             $rec['job_title'],
             $rec['branch_name'] ?? '-',
+            'وردية ' . ($rec['shift_number'] ?? 1),
             date('H:i', strtotime($rec['checkin_time'])),
             $rec['work_start_time'] ?? '-',
             $rec['late_minutes'],
@@ -405,6 +407,7 @@ require __DIR__ . '/../includes/report_print_header.php';
                         <th>اليوم</th>
                         <th>الموظف</th>
                         <th>الفرع</th>
+                        <th>الوردية</th>
                         <th>بداية الدوام</th>
                         <th>وقت الحضور</th>
                         <th>التأخير</th>
@@ -422,6 +425,7 @@ require __DIR__ . '/../includes/report_print_header.php';
                                                                             ?></td>
                             <td><strong><?= htmlspecialchars($rec['employee_name']) ?></strong></td>
                             <td style="font-size:.8rem"><?= htmlspecialchars($rec['branch_name'] ?? '-') ?></td>
+                            <td style="text-align:center;font-weight:600;color:var(--primary)">و<?= $rec['shift_number'] ?? 1 ?></td>
                             <td style="color:var(--text2);font-family:monospace"><?= $rec['work_start_time'] ?? '-' ?></td>
                             <td style="color:var(--primary);font-weight:700;font-family:monospace"><?= date('H:i:s', strtotime($rec['checkin_time'])) ?></td>
                             <td>

@@ -71,9 +71,16 @@ try {
         $randomTime = date('H:i:s', $randomTs);
         $timestamp = $today . ' ' . $randomTime;
 
-        // حساب التبكير
-        $schedule = getBranchSchedule($rule['branch_id']);
-        $workStart = strtotime($today . ' ' . $schedule['work_start_time']);
+        // تحديد الوردية المناسبة وحساب التبكير/التأخير
+        $branchShiftsList = getAllBranchShifts($rule['branch_id']);
+        $shiftNum = !empty($branchShiftsList) ? assignTimeToShift(date('H:i', $randomTs), $branchShiftsList) : 1;
+        $matchedShift = null;
+        foreach ($branchShiftsList as $bs) {
+            if ((int)$bs['shift_number'] === $shiftNum) { $matchedShift = $bs; break; }
+        }
+        $workStart = $matchedShift
+            ? strtotime($today . ' ' . $matchedShift['shift_start'])
+            : strtotime($today . ' ' . getBranchSchedule($rule['branch_id'])['work_start_time']);
         $earlyMinutes = ($randomTs < $workStart) ? max(0, (int)round(($workStart - $randomTs) / 60)) : 0;
         $graceMinutes = (int) getSystemSetting('late_grace_minutes', '0');
         $lateMinutes = ($randomTs > $workStart) ? max(0, (int)round(($randomTs - $workStart) / 60) - $graceMinutes) : 0;

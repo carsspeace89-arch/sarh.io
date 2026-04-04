@@ -42,10 +42,20 @@ $stmt = db()->prepare("
     SELECT 
         e.id AS employee_id, e.name AS employee_name, e.job_title,
         b.name AS branch_name,
-        a.attendance_date, a.timestamp AS checkin_time, a.early_minutes
+        a.attendance_date, a.timestamp AS checkin_time, a.early_minutes,
+        COALESCE(bs.shift_number, 1) AS shift_number
     FROM attendances a
     INNER JOIN employees e ON a.employee_id = e.id
     LEFT JOIN branches b ON e.branch_id = b.id
+    LEFT JOIN branch_shifts bs ON bs.branch_id = e.branch_id AND bs.is_active = 1
+        AND bs.shift_number = (
+            SELECT bs2.shift_number FROM branch_shifts bs2 
+            WHERE bs2.branch_id = e.branch_id AND bs2.is_active = 1
+            ORDER BY ABS(TIMESTAMPDIFF(MINUTE, 
+                CONCAT(a.attendance_date, ' ', bs2.shift_start), 
+                a.timestamp)) 
+            LIMIT 1
+        )
     WHERE e.is_active = 1 AND e.deleted_at IS NULL AND {$whereStr}
     ORDER BY a.early_minutes DESC, a.attendance_date DESC
 ");
@@ -88,9 +98,9 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
     header('Content-Disposition: attachment; filename="early_report_' . $dateFrom . '_' . $dateTo . '.csv"');
     $out = fopen('php://output', 'w');
     fprintf($out, chr(0xEF) . chr(0xBB) . chr(0xBF));
-    fputcsv($out, ['الموظف', 'الوظيفة', 'الفرع', 'عدد أيام التبكير', 'إجمالي دقائق التبكير', 'أقصى تبكير (دقيقة)']);
+    fputcsv($out, ['الموظف', 'الوظيفة', 'الفرع', 'الوردية', 'عدد أيام التبكير', 'إجمالي دقائق التبكير', 'أقصى تبكير (دقيقة)']);
     foreach ($employeeStats as $s) {
-        fputcsv($out, [$s['name'], $s['job_title'], $s['branch_name'] ?? '-', $s['total_days'], $s['total_minutes'], $s['max_early']]);
+        fputcsv($out, [$s['name'], $s['job_title'], $s['branch_name'] ?? '-', '-', $s['total_days'], $s['total_minutes'], $s['max_early']]);
     }
     fclose($out);
     exit;
@@ -209,13 +219,14 @@ require __DIR__ . '/../includes/report_print_header.php';
     </div>
     <div style="overflow-x:auto">
     <table class="att-table">
-        <thead><tr><th>#</th><th>الموظف</th><th>الفرع</th><th>التاريخ</th><th>وقت الحضور</th><th>التبكير</th></tr></thead>
+        <thead><tr><th>#</th><th>الموظف</th><th>الفرع</th><th>الوردية</th><th>التاريخ</th><th>وقت الحضور</th><th>التبكير</th></tr></thead>
         <tbody>
         <?php foreach ($records as $i => $rec): ?>
         <tr style="background:rgba(5,150,105,<?= min(0.12, ($rec['early_minutes'] / 200)) ?>)">
             <td style="color:var(--text3)"><?= $i + 1 ?></td>
             <td><strong><?= htmlspecialchars($rec['employee_name']) ?></strong><br><small style="color:var(--text3)"><?= htmlspecialchars($rec['job_title']) ?></small></td>
             <td style="font-size:.82rem;color:var(--text2)"><?= htmlspecialchars($rec['branch_name'] ?? '-') ?></td>
+            <td style="text-align:center;font-weight:600;color:var(--primary)">و<?= $rec['shift_number'] ?? 1 ?></td>
             <td style="color:var(--text2)"><?= $rec['attendance_date'] ?></td>
             <td style="color:var(--primary);font-weight:bold"><?= date('h:i A', strtotime($rec['checkin_time'])) ?></td>
             <td>
@@ -228,7 +239,7 @@ require __DIR__ . '/../includes/report_print_header.php';
         </tr>
         <?php endforeach; ?>
         <?php if (empty($records)): ?>
-        <tr><td colspan="6" style="text-align:center;padding:30px;color:var(--text3)">لا يوجد سجلات</td></tr>
+        <tr><td colspan="7" style="text-align:center;padding:30px;color:var(--text3)">لا يوجد سجلات</td></tr>
         <?php endif; ?>
         </tbody>
     </table>
