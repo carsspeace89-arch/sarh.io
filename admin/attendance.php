@@ -192,6 +192,8 @@ if ($filterBranch > 0) { $where[] = "e.branch_id = ?"; $params[] = $filterBranch
 if ($filterShift > 0) {
     $shiftFilter = buildShiftTimeFilter($filterShift);
     if ($shiftFilter) { $where[] = $shiftFilter['sql']; $params = array_merge($params, $shiftFilter['params']); }
+} else {
+    $where[] = "1=0";
 }
 
 $whereStr = implode(' AND ', $where);
@@ -317,8 +319,8 @@ require_once __DIR__ . '/../includes/admin_layout.php';
         </div>
         <div class="form-group" style="margin:0">
             <label class="form-label">الوردية</label>
-            <select class="form-control" name="shift" id="shiftSelect">
-                <option value="0">كل الورديات</option>
+            <select class="form-control" name="shift" id="shiftSelect" required>
+                <option value="">-- اختر الوردية --</option>
             </select>
         </div>
         <div class="form-group" style="margin:0">
@@ -533,7 +535,7 @@ require_once __DIR__ . '/../includes/admin_layout.php';
     const curShift = <?= $filterShift ?>;
     function updateShifts(){
         const bid = branchSel ? branchSel.value : 0;
-        shiftSel.innerHTML = '<option value="0">كل الورديات</option>';
+        shiftSel.innerHTML = '<option value="">-- اختر الوردية --</option>';
         if(bid && branchShifts[bid]){
             branchShifts[bid].forEach(s=>{
                 const o = document.createElement('option');
@@ -544,7 +546,7 @@ require_once __DIR__ . '/../includes/admin_layout.php';
             });
         }
     }
-    if(branchSel) branchSel.addEventListener('change', ()=>{ shiftSel.value = 0; updateShifts(); });
+    if(branchSel) branchSel.addEventListener('change', ()=>{ shiftSel.value = ''; updateShifts(); });
     updateShifts();
 })();
 
