@@ -462,11 +462,13 @@ require __DIR__ . '/../includes/report_print_header.php';
 </script>
 
 <style>
+@page { size: A4; margin: 12mm 10mm 15mm 10mm; }
 @media print {
     .sidebar, .topbar, .bottom-nav, form, .no-print { display: none !important; }
     .main-content { margin: 0 !important; }
     .content { padding: 0 !important; }
     .card, .chart-card { break-inside: avoid; box-shadow: none !important; border: 1px solid #e5dcc8; }
+    .chart-card canvas { max-height: 250px !important; }
     .print-report-header, .print-report-footer { display: block !important; }
     .content::after { opacity: .035 !important; }
 }

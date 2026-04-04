@@ -339,4 +339,20 @@ require __DIR__ . '/../includes/report_print_header.php';
     </div>
 </div>
 
+<style>
+@page { size: A4 landscape; margin: 10mm 8mm; }
+@media print {
+    .sidebar, .topbar, .bottom-nav, form, .no-print, .report-filter, .filter-grid { display: none !important; }
+    .main-content { margin: 0 !important; }
+    .content { padding: 0 !important; max-width: 100% !important; }
+    .card, .payroll-card { break-inside: avoid; box-shadow: none !important; border: 1px solid #e5dcc8; }
+    .payroll-summary { display: flex !important; flex-wrap: wrap; gap: 8px; }
+    .payroll-box { flex: 1 1 22%; border: 1px solid #e5dcc8; }
+    .print-report-header, .print-report-footer { display: block !important; }
+    table { font-size: 9px; }
+    th, td { padding: 4px 5px !important; }
+}
+</style>
+
+<?php require __DIR__ . '/../includes/report_print_footer.php'; ?>
 <?php require_once __DIR__ . '/../includes/admin_footer.php'; ?>

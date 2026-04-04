@@ -304,4 +304,17 @@ new Chart(document.getElementById('compareChart'), {
 </div>
 <?php endif; ?>
 
+<style>
+@media print {
+    .sidebar, .topbar, .bottom-nav, form, .no-print, .report-filter, .compare-tabs { display: none !important; }
+    .main-content { margin: 0 !important; }
+    .content { padding: 0 !important; }
+    .card, .chart-wrap { break-inside: avoid; box-shadow: none !important; border: 1px solid #e5dcc8; }
+    .compare-table th, .compare-table td { padding: 6px 8px !important; }
+    .print-report-header, .print-report-footer { display: block !important; }
+    .chart-wrap canvas { max-height: 200px !important; }
+}
+</style>
+
+<?php require __DIR__ . '/../includes/report_print_footer.php'; ?>
 <?php require_once __DIR__ . '/../includes/admin_footer.php'; ?>

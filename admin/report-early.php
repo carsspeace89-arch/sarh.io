@@ -384,8 +384,3 @@ foreach ($top3 as $eid => $s):
 
 <?php require __DIR__ . '/../includes/report_print_footer.php'; ?>
 <?php require_once __DIR__ . '/../includes/admin_footer.php'; ?>
-</div></div></body></html>
-
-<?php require __DIR__ . '/../includes/report_print_footer.php'; ?>
-<?php require_once __DIR__ . '/../includes/admin_footer.php'; ?>
-</div></div></body></html>

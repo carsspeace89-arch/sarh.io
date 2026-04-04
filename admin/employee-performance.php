@@ -311,4 +311,18 @@ new Chart(document.getElementById('perfChart'), {
 </div>
 <?php endif; ?>
 
+<style>
+@media print {
+    .sidebar, .topbar, .bottom-nav, form, .no-print, .report-filter { display: none !important; }
+    .main-content { margin: 0 !important; }
+    .content { padding: 0 !important; }
+    .card, .perf-card, .chart-wrap, .emp-header { break-inside: avoid; box-shadow: none !important; border: 1px solid #e5dcc8; }
+    .perf-grid { display: grid !important; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .score-ring { border: 3px solid #c9a84c !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .print-report-header, .print-report-footer { display: block !important; }
+    .chart-wrap canvas { max-height: 180px !important; }
+}
+</style>
+
+<?php require __DIR__ . '/../includes/report_print_footer.php'; ?>
 <?php require_once __DIR__ . '/../includes/admin_footer.php'; ?>

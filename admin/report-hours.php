@@ -373,4 +373,18 @@ document.getElementById('branchSelect')?.addEventListener('change', function() {
 })();
 </script>
 
+<style>
+@media print {
+    .sidebar, .topbar, .bottom-nav, form, .no-print, .report-filter, .filter-grid, .tab-btns { display: none !important; }
+    .main-content { margin: 0 !important; }
+    .content { padding: 0 !important; }
+    .card { break-inside: avoid; box-shadow: none !important; border: 1px solid #e5dcc8; }
+    .print-report-header, .print-report-footer { display: block !important; }
+    .tab-pane { display: block !important; page-break-before: auto; }
+    .hours-bar { border: 1px solid #ddd; }
+    .hours-bar-fill { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+</style>
+
+<?php require __DIR__ . '/../includes/report_print_footer.php'; ?>
 <?php require_once __DIR__ . '/../includes/admin_footer.php'; ?>

@@ -495,6 +495,7 @@ require __DIR__ . '/../includes/report_print_header.php';
 </script>
 
 <style>
+@page { size: A4; margin: 12mm 10mm 15mm 10mm; }
 @media print {
     .sidebar, .topbar, .bottom-nav, form, .no-print, .report-filter { display: none !important; }
     .main-content { margin: 0 !important; }
