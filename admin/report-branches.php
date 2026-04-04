@@ -98,6 +98,32 @@ foreach ($branches as $b) {
 // ترتيب الفروع حسب نسبة الحضور
 usort($branchStats, fn($a, $b) => $b['attendance_rate'] <=> $a['attendance_rate']);
 
+// =========================================================
+// تصدير CSV
+// =========================================================
+if (isset($_GET['export']) && $_GET['export'] === 'csv') {
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="branches-report-' . $dateFrom . '-to-' . $dateTo . '.csv"');
+    $out = fopen('php://output', 'w');
+    fwrite($out, "\xEF\xBB\xBF");
+    fputcsv($out, ['الفرع', 'عدد الموظفين', 'أيام الحضور', 'أيام الغياب', 'مرات التأخير', 'إجمالي دقائق التأخير', 'متوسط التأخير', 'نسبة الحضور %', 'أيام العمل']);
+    foreach ($branchStats as $bs) {
+        fputcsv($out, [
+            $bs['name'],
+            $bs['emp_count'],
+            $bs['present_days'],
+            $bs['absent_days'],
+            $bs['late_count'],
+            $bs['total_late_min'],
+            $bs['avg_late_min'],
+            $bs['attendance_rate'],
+            $bs['work_days']
+        ]);
+    }
+    fclose($out);
+    exit;
+}
+
 require_once __DIR__ . '/../includes/admin_layout.php';
 ?>
 
@@ -129,6 +155,7 @@ require __DIR__ . '/../includes/report_print_header.php';
         </div>
         <div class="filter-actions">
             <button type="submit" class="btn btn-primary"><?= svgIcon('compare', 16) ?> عرض</button>
+            <a href="?date_from=<?= urlencode($dateFrom) ?>&date_to=<?= urlencode($dateTo) ?>&shift_num=<?= $filterShiftNum ?>&export=csv" class="btn btn-secondary" style="text-decoration:none"><?= svgIcon('document', 16) ?> CSV</a>
             <button type="button" onclick="window.print()" class="btn btn-secondary"><?= svgIcon('document', 16) ?> طباعة</button>
         </div>
     </form>

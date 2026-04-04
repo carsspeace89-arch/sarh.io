@@ -156,6 +156,44 @@ $dateObj   = new DateTime($date);
 $dayNames  = ['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
 $dayOfWeek = $dayNames[(int)$dateObj->format('w')];
 $dateAr    = $dayOfWeek . '، ' . $dateObj->format('j') . ' / ' . $dateObj->format('n') . ' / ' . $dateObj->format('Y');
+
+// =========================================================
+// تصدير CSV
+// =========================================================
+if (isset($_GET['export']) && $_GET['export'] === 'csv') {
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="daily-report-' . $date . '.csv"');
+    $out = fopen('php://output', 'w');
+    fwrite($out, "\xEF\xBB\xBF");
+    $csvHeader = ['#', 'الموظف', 'المسمى', 'الفرع', 'أول حضور', 'آخر انصراف', 'التأخير (دقيقة)'];
+    for ($sn = 1; $sn <= $maxShifts; $sn++) {
+        $csvHeader[] = "ت{$sn} حضور";
+        $csvHeader[] = "ت{$sn} انصراف";
+    }
+    $csvHeader[] = 'الحالة';
+    fputcsv($out, $csvHeader);
+    $i = 0;
+    foreach ($rows as $r) {
+        $i++;
+        $csvRow = [
+            $i,
+            $r['emp_name'],
+            $r['job_title'] ?? '',
+            $r['branch_name'] ?? '',
+            $r['check_in_ts'] ? date('h:i A', strtotime($r['check_in_ts'])) : '-',
+            $r['check_out_ts'] ? date('h:i A', strtotime($r['check_out_ts'])) : '-',
+            (int)($r['late_min'] ?? 0)
+        ];
+        for ($sn = 1; $sn <= $maxShifts; $sn++) {
+            $csvRow[] = isset($r['shifts'][$sn]) && $r['shifts'][$sn]['in'] ? date('h:i A', strtotime($r['shifts'][$sn]['in'])) : '-';
+            $csvRow[] = isset($r['shifts'][$sn]) && $r['shifts'][$sn]['out'] ? date('h:i A', strtotime($r['shifts'][$sn]['out'])) : '-';
+        }
+        $csvRow[] = $r['check_in_ts'] ? ($r['late_min'] > 0 ? 'متأخر' : 'حاضر') : 'غائب';
+        fputcsv($out, $csvRow);
+    }
+    fclose($out);
+    exit;
+}
 ?>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -557,6 +595,7 @@ $dateAr    = $dayOfWeek . '، ' . $dateObj->format('j') . ' / ' . $dateObj->form
       <button type="submit" class="btn-print" style="background:#475569">عرض</button>
     </form>
     <button class="btn-print" onclick="window.print()">🖨️ طباعة / PDF</button>
+    <a href="?date=<?= urlencode($date) ?>&branch=<?= $filterBranch ?>&shift=<?= $filterShift ?>&export=csv" class="btn-print" style="text-decoration:none;background:#047857">📥 CSV</a>
     <a href="attendance.php" class="btn-back">← العودة</a>
   </div>
 </div>

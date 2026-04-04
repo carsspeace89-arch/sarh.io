@@ -135,6 +135,49 @@ foreach ($leaveData as $lv) {
 // جميع الموظفين (بدون فلتر) للقائمة المنسدلة
 $allEmps = db()->query("SELECT id, name FROM employees WHERE is_active = 1 AND deleted_at IS NULL ORDER BY name")->fetchAll();
 
+// =========================================================
+// تصدير CSV
+// =========================================================
+if (isset($_GET['export']) && $_GET['export'] === 'csv') {
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="monthly-report-' . $month . '.csv"');
+    $out = fopen('php://output', 'w');
+    fwrite($out, "\xEF\xBB\xBF");
+    $csvHeader = ['الموظف', 'الفرع'];
+    $today = date('Y-m-d');
+    for ($d = 1; $d <= $daysInMonth; $d++) {
+        $csvHeader[] = $d;
+    }
+    $csvHeader[] = 'حضور';
+    $csvHeader[] = 'غياب';
+    $csvHeader[] = 'تأخر';
+    $csvHeader[] = 'إجازة';
+    fputcsv($out, $csvHeader);
+    foreach ($employees as $emp) {
+        $row = [$emp['name'], $emp['branch_name'] ?? ''];
+        $pCount = 0; $aCount = 0; $lCount = 0; $lvCount = 0;
+        for ($d = 1; $d <= $daysInMonth; $d++) {
+            $dateStr = sprintf('%04d-%02d-%02d', $year, $mon, $d);
+            if ($dateStr > $today) { $row[] = '-'; continue; }
+            $dow = date('w', strtotime($dateStr));
+            if ($dow == 5) { $row[] = 'جمعة'; continue; }
+            if (isset($leaveMap[$emp['id']][$dateStr])) { $row[] = 'إجازة'; $lvCount++; continue; }
+            if (isset($attMap[$emp['id']][$dateStr])) {
+                $late = $attMap[$emp['id']][$dateStr]['_late'] ?? 0;
+                if ($late > 0) { $row[] = "تأخر {$late}د"; $pCount++; $lCount++; }
+                else { $row[] = '✓'; $pCount++; }
+            } else { $row[] = 'غائب'; $aCount++; }
+        }
+        $row[] = $pCount;
+        $row[] = $aCount;
+        $row[] = $lCount;
+        $row[] = $lvCount;
+        fputcsv($out, $row);
+    }
+    fclose($out);
+    exit;
+}
+
 require_once __DIR__ . '/../includes/admin_layout.php';
 ?>
 
@@ -178,6 +221,7 @@ require __DIR__ . '/../includes/report_print_header.php';
             </select>
         </div>
         <button type="submit" class="btn btn-primary" style="padding:8px 20px">عرض</button>
+        <a href="?month=<?= urlencode($month) ?>&branch_id=<?= $branchId ?>&emp_id=<?= $empId ?>&shift=<?= $filterShift ?>&export=csv" class="btn btn-secondary" style="padding:8px 16px;text-decoration:none">📥 CSV</a>
         <button type="button" onclick="window.print()" class="btn btn-secondary" style="padding:8px 16px">🖨️ طباعة</button>
     </form>
 </div>

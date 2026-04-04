@@ -83,6 +83,24 @@
             <a href="report-charts.php" class="nav-item <?= ($activePage ?? '') === 'report-charts' ? 'active' : '' ?>">
                 <span class="nav-icon"><?= svgIcon('chart', 18) ?></span> التقارير البيانية
             </a>
+            <a href="report-hours.php" class="nav-item <?= ($activePage ?? '') === 'report-hours' ? 'active' : '' ?>">
+                <span class="nav-icon"><?= svgIcon('attendance', 18) ?></span> ساعات العمل
+            </a>
+            <a href="report-overtime.php" class="nav-item <?= ($activePage ?? '') === 'report-overtime' ? 'active' : '' ?>">
+                <span class="nav-icon"><?= svgIcon('late', 18) ?></span> تقرير الأوفرتايم
+            </a>
+            <a href="report-payroll.php" class="nav-item <?= ($activePage ?? '') === 'report-payroll' ? 'active' : '' ?>">
+                <span class="nav-icon"><?= svgIcon('document', 18) ?></span> كشف الرواتب
+            </a>
+            <a href="employee-performance.php" class="nav-item <?= ($activePage ?? '') === 'employee-performance' ? 'active' : '' ?>">
+                <span class="nav-icon"><?= svgIcon('star', 18) ?></span> بطاقة الأداء
+            </a>
+            <a href="report-builder.php" class="nav-item <?= ($activePage ?? '') === 'report-builder' ? 'active' : '' ?>">
+                <span class="nav-icon"><?= svgIcon('settings', 18) ?></span> تقرير مخصص
+            </a>
+            <a href="report-compare.php" class="nav-item <?= ($activePage ?? '') === 'report-compare' ? 'active' : '' ?>">
+                <span class="nav-icon"><?= svgIcon('compare', 18) ?></span> المقارنات
+            </a>
 
             <div class="nav-label">الإدارة</div>
             <a href="leaves.php" class="nav-item <?= ($activePage ?? '') === 'leaves' ? 'active' : '' ?>">

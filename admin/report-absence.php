@@ -101,6 +101,28 @@ usort($absenceData, fn($a, $b) => $b['count'] - $a['count']);
 
 $totalAbsent = array_sum(array_column($absenceData, 'count'));
 
+// =========================================================
+// تصدير CSV
+// =========================================================
+if (isset($_GET['export']) && $_GET['export'] === 'csv') {
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="absence-report-' . $dateFrom . '-to-' . $dateTo . '.csv"');
+    $out = fopen('php://output', 'w');
+    fwrite($out, "\xEF\xBB\xBF"); // BOM
+    fputcsv($out, ['الموظف', 'المسمى الوظيفي', 'الفرع', 'عدد أيام الغياب', 'أيام الغياب']);
+    foreach ($absenceData as $ad) {
+        fputcsv($out, [
+            $ad['employee']['name'],
+            $ad['employee']['job_title'] ?? '',
+            $ad['employee']['branch_name'] ?? '',
+            $ad['count'],
+            implode(' | ', $ad['absent_days'])
+        ]);
+    }
+    fclose($out);
+    exit;
+}
+
 require_once __DIR__ . '/../includes/admin_layout.php';
 ?>
 
@@ -138,6 +160,7 @@ require __DIR__ . '/../includes/report_print_header.php';
         </div>
         <div class="filter-actions">
             <button type="submit" class="btn btn-primary"><?= svgIcon('attendance', 16) ?> عرض</button>
+            <a href="?date_from=<?= urlencode($dateFrom) ?>&date_to=<?= urlencode($dateTo) ?>&branch_id=<?= $branchId ?>&shift=<?= $filterShift ?? 0 ?>&export=csv" class="btn btn-secondary" style="text-decoration:none"><?= svgIcon('document', 16) ?> CSV</a>
             <button type="button" onclick="window.print()" class="btn btn-secondary">🖨️ طباعة</button>
         </div>
     </form>
