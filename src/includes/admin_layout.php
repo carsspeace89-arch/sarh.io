@@ -17,8 +17,8 @@
     <link rel="icon" type="image/png" href="<?= SITE_URL ?>/assets/images/loogo.png">
     <link rel="apple-touch-icon" href="<?= SITE_URL ?>/assets/images/loogo.png">
     <link rel="stylesheet" href="<?= SITE_URL ?>/assets/fonts/tajawal.css">
-    <link rel="stylesheet" href="<?= SITE_URL ?>/assets/css/admin.css">
-    <link rel="stylesheet" href="<?= SITE_URL ?>/assets/css/dark-mode.css">
+    <link rel="stylesheet" href="<?= SITE_URL ?>/assets/css/admin.css?v=<?= filemtime(__DIR__.'/../assets/css/admin.css') ?: time() ?>">
+    <link rel="stylesheet" href="<?= SITE_URL ?>/assets/css/dark-mode.css?v=<?= filemtime(__DIR__.'/../assets/css/dark-mode.css') ?: time() ?>">
     <?php if (function_exists('\App\Middleware\CsrfProtection::metaTag')): ?>
     <?= \App\Middleware\CsrfProtection::metaTag() ?>
     <?php else: ?>
