@@ -269,31 +269,52 @@ foreach ($employees as $emp) {
 </div>
 
 <!-- الجدول -->
-<?php foreach ($employees as $emp): ?>
-<div class="card" style="margin-bottom:16px;padding:0;overflow:hidden">
-    <div style="padding:14px 16px;background:var(--surface2,#F8FAFC);border-bottom:1px solid var(--border-color,#E2E8F0);display:flex;justify-content:space-between;align-items:center">
+<?php foreach ($employees as $empIdx => $emp):
+    // حساب إحصائيات الموظف
+    $empPresent = 0; $empAbsent = 0; $empLate = 0; $empLeave = 0; $empLateMin = 0; $empFriday = 0;
+    for ($d = 1; $d <= $daysInMonth; $d++) {
+        $dateStr = sprintf('%04d-%02d-%02d', $year, $mon, $d);
+        if ($dateStr > $today) continue;
+        $dayOfWeek = date('w', strtotime($dateStr));
+        if ($dayOfWeek == 5) { $empFriday++; continue; }
+        if (isset($attMap[$emp['id']][$dateStr])) {
+            $empPresent++;
+            $late = (int)($attMap[$emp['id']][$dateStr]['_late'] ?? 0);
+            if ($late > 0) { $empLate++; $empLateMin += $late; }
+        } elseif (isset($leaveMap[$emp['id']][$dateStr])) {
+            $empLeave++;
+        } else {
+            $empAbsent++;
+        }
+    }
+?>
+<div class="emp-page">
+    <!-- ترويسة الموظف للطباعة -->
+    <div class="emp-print-header">
+        <div class="eph-top">
+            <div class="eph-logo">
+                <img src="<?= SITE_URL ?>/assets/images/loogo.png" alt="">
+            </div>
+            <div class="eph-center">
+                <div class="eph-title">التقرير الشهري للحضور والانصراف</div>
+                <div class="eph-month"><?= $monthName ?></div>
+            </div>
+            <div class="eph-date"><?= date('Y/m/d') ?></div>
+        </div>
+        <div class="eph-emp-info">
+            <div class="eph-emp-field"><span class="eph-label">الموظف:</span> <strong><?= htmlspecialchars($emp['name']) ?></strong></div>
+            <div class="eph-emp-field"><span class="eph-label">المسمى:</span> <?= htmlspecialchars($emp['job_title'] ?? '-') ?></div>
+            <div class="eph-emp-field"><span class="eph-label">الفرع:</span> <?= htmlspecialchars($emp['branch_name'] ?? '-') ?></div>
+        </div>
+    </div>
+
+    <!-- بطاقة الشاشة -->
+    <div class="emp-screen-header card" style="padding:14px 16px;margin-bottom:0;border-radius:12px 12px 0 0;background:var(--surface2,#F8FAFC);border-bottom:1px solid var(--border-color,#E2E8F0);display:flex;justify-content:space-between;align-items:center">
         <div>
             <strong style="font-size:.95rem"><?= htmlspecialchars($emp['name']) ?></strong>
             <span style="color:var(--text3);font-size:.82rem;margin-right:8px"><?= htmlspecialchars($emp['job_title']) ?></span>
             <span style="color:var(--text3);font-size:.78rem;margin-right:8px">— <?= htmlspecialchars($emp['branch_name'] ?? 'بدون فرع') ?></span>
         </div>
-        <?php
-        $empPresent = 0; $empAbsent = 0; $empLate = 0; $empLeave = 0;
-        for ($d = 1; $d <= $daysInMonth; $d++) {
-            $dateStr = sprintf('%04d-%02d-%02d', $year, $mon, $d);
-            if ($dateStr > $today) continue;
-            $dayOfWeek = date('w', strtotime($dateStr));
-            if ($dayOfWeek == 5) continue;
-            if (isset($attMap[$emp['id']][$dateStr])) {
-                $empPresent++;
-                if (($attMap[$emp['id']][$dateStr]['_late'] ?? 0) > 0) $empLate++;
-            } elseif (isset($leaveMap[$emp['id']][$dateStr])) {
-                $empLeave++;
-            } else {
-                $empAbsent++;
-            }
-        }
-        ?>
         <div style="display:flex;gap:10px;font-size:.78rem">
             <span style="color:#10B981">حضور: <?= $empPresent ?></span>
             <span style="color:#EF4444">غياب: <?= $empAbsent ?></span>
@@ -301,8 +322,10 @@ foreach ($employees as $emp) {
             <span style="color:#6366F1">إجازة: <?= $empLeave ?></span>
         </div>
     </div>
+
+    <div class="card emp-table-card" style="margin-bottom:16px;padding:0;overflow:hidden;border-radius:0 0 12px 12px">
     <div style="overflow-x:auto">
-        <table style="width:100%;border-collapse:collapse;font-size:.8rem;min-width:<?= 200 + $maxShifts * 200 ?>px">
+        <table class="monthly-att-table" style="width:100%;border-collapse:collapse;font-size:.8rem;min-width:<?= 200 + $maxShifts * 200 ?>px">
             <thead>
                 <tr style="background:var(--surface2,#F8FAFC)">
                     <th style="padding:8px;text-align:center;width:34px">اليوم</th>
@@ -355,7 +378,35 @@ foreach ($employees as $emp) {
                 </tr>
             <?php endfor; ?>
             </tbody>
+            <!-- صف المجموع -->
+            <tfoot>
+                <tr class="emp-totals-row">
+                    <td colspan="2" style="text-align:center;font-weight:800">المجموع</td>
+                    <?php for ($sn = 1; $sn <= $maxShifts; $sn++): ?>
+                    <td colspan="2" style="text-align:center">—</td>
+                    <?php endfor; ?>
+                    <td style="text-align:center;font-weight:700;color:#D97706"><?= $empLateMin > 0 ? $empLateMin . ' د' : '—' ?></td>
+                </tr>
+            </tfoot>
         </table>
+    </div>
+    <!-- ملخص الموظف -->
+    <div class="emp-summary-bar">
+        <div class="emp-sum-item green">✓ حضور: <strong><?= $empPresent ?></strong></div>
+        <div class="emp-sum-item red">✗ غياب: <strong><?= $empAbsent ?></strong></div>
+        <div class="emp-sum-item orange">⏰ تأخير: <strong><?= $empLate ?></strong> (<?= $empLateMin ?> د)</div>
+        <div class="emp-sum-item purple">📋 إجازة: <strong><?= $empLeave ?></strong></div>
+        <div class="emp-sum-item gray">🕌 جمعة: <strong><?= $empFriday ?></strong></div>
+    </div>
+    </div>
+
+    <!-- فوتر توقيعات الموظف للطباعة -->
+    <div class="emp-print-footer">
+        <div class="epf-sigs">
+            <div class="epf-sig"><div class="epf-sig-line">توقيع الموظف</div></div>
+            <div class="epf-sig"><div class="epf-sig-line">توقيع المدير المباشر</div></div>
+            <div class="epf-sig"><div class="epf-sig-line">توقيع الموارد البشرية</div></div>
+        </div>
     </div>
 </div>
 <?php endforeach; ?>
@@ -389,14 +440,120 @@ foreach ($employees as $emp) {
 </script>
 
 <style>
-@page { size: A4; margin: 12mm 10mm 15mm 10mm; }
+/* ── إخفاء ترويسة/فوتر الموظف على الشاشة ── */
+.emp-print-header, .emp-print-footer { display: none; }
+
+/* ── شريط ملخص الموظف ── */
+.emp-summary-bar {
+    display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 16px;
+    background: var(--surface2, #F8FAFC); border-top: 2px solid var(--border-color, #E2E8F0);
+}
+.emp-sum-item {
+    font-size: .78rem; padding: 4px 12px; border-radius: 6px; font-weight: 600;
+}
+.emp-sum-item.green { background: rgba(16,185,129,.08); color: #10B981; }
+.emp-sum-item.red { background: rgba(239,68,68,.08); color: #EF4444; }
+.emp-sum-item.orange { background: rgba(217,119,6,.08); color: #D97706; }
+.emp-sum-item.purple { background: rgba(99,102,241,.08); color: #6366F1; }
+.emp-sum-item.gray { background: rgba(107,114,128,.08); color: #6B7280; }
+
+.emp-totals-row td {
+    padding: 8px !important; background: var(--surface2, #F8FAFC);
+    border-top: 2px solid var(--border-color, #E2E8F0); font-weight: 700;
+}
+
+@page { size: A4 portrait; margin: 8mm 7mm 10mm 7mm; }
+
 @media print {
-    .sidebar, .topbar, .bottom-nav, form, .no-print { display: none !important; }
+    /* ── إخفاء عناصر غير مطلوبة ── */
+    .sidebar, .topbar, .bottom-nav, form, .no-print,
+    .stats-grid, .emp-screen-header,
+    .print-report-header, .print-report-footer { display: none !important; }
     .main-content { margin: 0 !important; }
     .content { padding: 0 !important; }
-    .card { break-inside: avoid; box-shadow: none !important; border: 1px solid #e5dcc8; }
-    .print-report-header, .print-report-footer { display: block !important; }
-    .content::after { opacity: .035 !important; }
+    .content::after { opacity: .03 !important; }
+
+    /* ── صفحة لكل موظف ── */
+    .emp-page {
+        page-break-after: always;
+        page-break-inside: avoid;
+        position: relative;
+    }
+    .emp-page:last-child { page-break-after: avoid; }
+
+    /* ── ترويسة الموظف ── */
+    .emp-print-header {
+        display: block !important;
+        margin-bottom: 4px;
+    }
+    .eph-top {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 6px 0; border-bottom: 2px solid #0f1b33;
+    }
+    .eph-logo img { height: 32px; }
+    .eph-center { text-align: center; flex: 1; }
+    .eph-title { font-size: 11pt; font-weight: 900; color: #0f1b33; }
+    .eph-month { font-size: 9pt; color: #555; margin-top: 1px; }
+    .eph-date { font-size: 8pt; color: #888; }
+
+    .eph-emp-info {
+        display: flex; gap: 20px; padding: 5px 0 4px;
+        border-bottom: 1px solid #ddd; font-size: 8.5pt;
+    }
+    .eph-label { color: #888; font-weight: 400; }
+    .eph-emp-info strong { color: #0f1b33; }
+
+    /* ── الجدول مضغوط ── */
+    .emp-table-card {
+        box-shadow: none !important;
+        border: 1px solid #ccc !important;
+        border-radius: 0 !important;
+        margin-bottom: 0 !important;
+    }
+    .monthly-att-table { min-width: 0 !important; font-size: 7pt !important; }
+    .monthly-att-table th {
+        padding: 3px 2px !important; font-size: 6.5pt !important;
+        background: #f0f0f0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact;
+        border-bottom: 1.5px solid #333 !important;
+    }
+    .monthly-att-table td {
+        padding: 2.5px 2px !important; font-size: 7pt !important;
+        border-bottom: 0.5px solid #ddd !important; line-height: 1.2 !important;
+    }
+    .monthly-att-table small { font-size: 5.5pt !important; }
+    .monthly-att-table tbody tr { page-break-inside: avoid; }
+
+    .emp-totals-row td {
+        padding: 3px 2px !important; font-size: 7.5pt !important;
+        border-top: 1.5px solid #333 !important;
+        background: #f5f5f5 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+
+    /* ── ملخص ── */
+    .emp-summary-bar {
+        padding: 4px 8px !important; gap: 6px !important;
+        border-top: 1px solid #ccc !important; background: #fafafa !important;
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    .emp-sum-item {
+        font-size: 7pt !important; padding: 2px 6px !important;
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+
+    /* ── فوتر التوقيعات ── */
+    .emp-print-footer {
+        display: block !important;
+        margin-top: 8px;
+    }
+    .epf-sigs {
+        display: flex; justify-content: space-between; gap: 20px;
+        padding-top: 6px;
+    }
+    .epf-sig { text-align: center; flex: 1; }
+    .epf-sig-line {
+        border-top: 1px solid #333; padding-top: 4px;
+        font-size: 7.5pt; color: #555; margin-top: 30px;
+    }
 }
 </style>
 
