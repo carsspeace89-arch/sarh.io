@@ -462,15 +462,16 @@ foreach ($employees as $emp) {
     border-top: 2px solid var(--border-color, #E2E8F0); font-weight: 700;
 }
 
-@page { size: A4 portrait; margin: 8mm 7mm 10mm 7mm; }
+@page { size: A4 portrait; margin: 5mm 5mm 8mm 5mm; }
 
 @media print {
     /* ── إخفاء عناصر غير مطلوبة ── */
     .sidebar, .topbar, .bottom-nav, form, .no-print,
     .stats-grid, .emp-screen-header,
     .print-report-header, .print-report-footer { display: none !important; }
-    .main-content { margin: 0 !important; }
-    .content { padding: 0 !important; }
+    .main-content { margin: 0 !important; padding: 0 !important; width: 100% !important; max-width: 100% !important; }
+    .content { padding: 0 !important; max-width: 100% !important; width: 100% !important; margin: 0 !important; }
+    html, body { width: 100% !important; }
     .content::after { opacity: .03 !important; }
 
     /* ── صفحة لكل موظف ── */
@@ -510,14 +511,14 @@ foreach ($employees as $emp) {
         border-radius: 0 !important;
         margin-bottom: 0 !important;
     }
-    .monthly-att-table { min-width: 0 !important; font-size: 7pt !important; }
+    .monthly-att-table { min-width: 0 !important; font-size: 7pt !important; width: 100% !important; }
     .monthly-att-table th {
-        padding: 3px 2px !important; font-size: 6.5pt !important;
+        padding: 3px 4px !important; font-size: 6.5pt !important;
         background: #f0f0f0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact;
         border-bottom: 1.5px solid #333 !important;
     }
     .monthly-att-table td {
-        padding: 2.5px 2px !important; font-size: 7pt !important;
+        padding: 2.5px 3px !important; font-size: 7pt !important;
         border-bottom: 0.5px solid #ddd !important; line-height: 1.2 !important;
     }
     .monthly-att-table small { font-size: 5.5pt !important; }
@@ -558,6 +559,7 @@ foreach ($employees as $emp) {
 </style>
 
 <?php require __DIR__ . '/../includes/report_print_footer.php'; ?>
+<?php require __DIR__ . '/../includes/print_settings.php'; ?>
 <?php require_once __DIR__ . '/../includes/admin_footer.php'; ?>
 </div></div>
 </body></html>

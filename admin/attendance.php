@@ -899,6 +899,7 @@ document.getElementById('manualForm')?.addEventListener('submit', async function
 </style>
 
 <?php require __DIR__ . '/../includes/report_print_footer.php'; ?>
+<?php require __DIR__ . '/../includes/print_settings.php'; ?>
 
 </div></div>
 </body></html>

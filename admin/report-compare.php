@@ -321,4 +321,5 @@ new Chart(document.getElementById('compareChart'), {
 </style>
 
 <?php require __DIR__ . '/../includes/report_print_footer.php'; ?>
+<?php require __DIR__ . '/../includes/print_settings.php'; ?>
 <?php require_once __DIR__ . '/../includes/admin_footer.php'; ?>
