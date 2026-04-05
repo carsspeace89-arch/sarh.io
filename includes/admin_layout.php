@@ -103,6 +103,9 @@
             </a>
 
             <div class="nav-label">الإدارة</div>
+            <a href="stars.php" class="nav-item <?= ($activePage ?? '') === 'stars' ? 'active' : '' ?>">
+                <span class="nav-icon"><?= svgIcon('star', 18) ?></span> نظام النجوم
+            </a>
             <a href="leaves.php" class="nav-item <?= ($activePage ?? '') === 'leaves' ? 'active' : '' ?>">
                 <span class="nav-icon"><?= svgIcon('leave', 18) ?></span> إدارة الإجازات
             </a>
