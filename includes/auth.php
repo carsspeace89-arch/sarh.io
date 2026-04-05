@@ -85,95 +85,88 @@ function triggerAutoCheckout(): void {
     if (file_exists($lockFile)) {
         $lastRun = (int) file_get_contents($lockFile);
         if (time() - $lastRun < 60) {
-            return; // لم يحن الوقت بعد
+            return;
         }
     }
 
-    // تحديث وقت آخر تشغيل فوراً (lock)
     file_put_contents($lockFile, (string) time());
 
     try {
         $now = new DateTime();
-        $currentTime = $now->format('H:i:s');
 
-        // جلب الموظفين بدون تسجيل انصراف اليوم أو أمس
+        // جلب تسجيلات الحضور التي ليس لها انصراف بعدها (يدعم الورديات المتعددة)
         $stmt = db()->prepare("
-            SELECT DISTINCT
-                e.id AS employee_id,
-                e.branch_id,
+            SELECT
+                ci.id AS checkin_id,
+                ci.employee_id,
                 ci.timestamp AS checkin_time,
                 ci.attendance_date,
                 ci.latitude,
-                ci.longitude
-            FROM employees e
-            INNER JOIN attendances ci ON e.id = ci.employee_id
+                ci.longitude,
+                e.branch_id
+            FROM attendances ci
+            INNER JOIN employees e ON ci.employee_id = e.id
             WHERE ci.type = 'in'
               AND ci.attendance_date IN (CURDATE(), DATE_SUB(CURDATE(), INTERVAL 1 DAY))
               AND e.is_active = 1
               AND e.deleted_at IS NULL
               AND NOT EXISTS (
                   SELECT 1 FROM attendances co
-                  WHERE co.employee_id = e.id
+                  WHERE co.employee_id = ci.employee_id
                     AND co.type = 'out'
                     AND co.attendance_date = ci.attendance_date
+                    AND co.timestamp > ci.timestamp
               )
+            ORDER BY ci.employee_id, ci.timestamp
         ");
         $stmt->execute();
-        $employees = $stmt->fetchAll();
+        $checkins = $stmt->fetchAll();
 
-        if (empty($employees)) {
-            return;
-        }
+        foreach ($checkins as $ci) {
+            $shiftStmt = db()->prepare("SELECT shift_number, shift_start, shift_end FROM branch_shifts WHERE branch_id = ? AND is_active = 1 ORDER BY shift_number");
+            $shiftStmt->execute([$ci['branch_id']]);
+            $shifts = $shiftStmt->fetchAll();
 
-        foreach ($employees as $emp) {
-            $schedule = getBranchSchedule($emp['branch_id']);
-            $shifts   = $schedule['shifts'] ?? [];
-
-            $checkinMin = timeToMinutes(date('H:i', strtotime($emp['checkin_time'])));
-            $coEnd = $schedule['work_end_time'];
-
-            foreach ($shifts as $shift) {
-                $shiftStart  = timeToMinutes($shift['shift_start']);
-                $shiftEnd    = timeToMinutes($shift['shift_end']);
-                $earlyWindow = ($shiftStart - 90 + 1440) % 1440;
-
-                if ($shiftEnd < $earlyWindow) {
-                    if ($checkinMin >= $earlyWindow || $checkinMin <= $shiftEnd) {
-                        $coEnd = $shift['shift_end'];
-                        break;
-                    }
-                } else {
-                    if ($checkinMin >= $earlyWindow && $checkinMin <= $shiftEnd) {
-                        $coEnd = $shift['shift_end'];
-                        break;
-                    }
-                }
+            if (empty($shifts)) {
+                $shifts = [['shift_number' => 1, 'shift_start' => getSystemSetting('work_start_time', '08:00'), 'shift_end' => getSystemSetting('work_end_time', '16:00')]];
             }
 
-            $expectedCheckout = new DateTime($emp['attendance_date'] . ' ' . $coEnd);
-            $checkInDT = new DateTime($emp['checkin_time']);
+            $checkinTime = date('H:i', strtotime($ci['checkin_time']));
+            $shiftNum = assignTimeToShift($checkinTime, $shifts);
+
+            $matchedShift = null;
+            foreach ($shifts as $s) {
+                if ((int)$s['shift_number'] === $shiftNum) { $matchedShift = $s; break; }
+            }
+            if (!$matchedShift) $matchedShift = $shifts[0];
+
+            $expectedCheckout = new DateTime($ci['attendance_date'] . ' ' . $matchedShift['shift_end']);
+            $checkInDT = new DateTime($ci['checkin_time']);
 
             if ($expectedCheckout <= $checkInDT) {
                 $expectedCheckout->modify('+1 day');
             }
 
             if ($now >= $expectedCheckout) {
+                $checkoutTimestamp = $expectedCheckout->format('Y-m-d H:i:s');
                 $insertStmt = db()->prepare("
                     INSERT INTO attendances (
                         employee_id, type, timestamp, attendance_date,
                         latitude, longitude, location_accuracy,
                         ip_address, user_agent, notes
                     ) VALUES (
-                        :emp_id, 'out', NOW(), :att_date,
+                        :emp_id, 'out', :ts, :att_date,
                         :lat, :lon, 0,
-                        'AUTO', 'AUTO-CHECKOUT', 'انصراف تلقائي عند انتهاء الوردية'
+                        'AUTO', 'AUTO-CHECKOUT', :notes
                     )
                 ");
                 $insertStmt->execute([
-                    'emp_id'   => $emp['employee_id'],
-                    'att_date' => $emp['attendance_date'],
-                    'lat'      => $emp['latitude'],
-                    'lon'      => $emp['longitude']
+                    'emp_id'   => $ci['employee_id'],
+                    'ts'       => $checkoutTimestamp,
+                    'att_date' => $ci['attendance_date'],
+                    'lat'      => $ci['latitude'],
+                    'lon'      => $ci['longitude'],
+                    'notes'    => "انصراف تلقائي - وردية {$shiftNum}"
                 ]);
             }
         }

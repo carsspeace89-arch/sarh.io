@@ -4,6 +4,7 @@
  * cron/auto-checkin.php - Auto Check-in for Exempted Employees
  * ================================================================
  * يسجل حضور تلقائي للموظفين المستثنين بوقت عشوائي ضمن النطاق المحدد
+ * يدعم الورديات المتعددة: يحدد الوردية النشطة ويتحقق من التكرار لها فقط
  * 
  * التشغيل: كل دقيقة عبر cron
  * مثال: * * * * * /usr/bin/php /path/to/cron/auto-checkin.php
@@ -25,10 +26,7 @@ if (php_sapi_name() !== 'cli') {
 
 $today = date('Y-m-d');
 $nowTime = date('H:i:s');
-$dayOfWeek = (int)date('w'); // 0=Sunday
-
-// تخطي الجمعة (5) والسبت (6) إذا أردت — يمكن تعديلها
-// if (in_array($dayOfWeek, [5, 6])) exit;
+$nowMin = (int)date('H') * 60 + (int)date('i');
 
 $autoCheckins = 0;
 $skipped = 0;
@@ -49,19 +47,54 @@ try {
     foreach ($rules as $rule) {
         // تحقق: هل الوقت الحالي ضمن النطاق؟
         if ($nowTime < $rule['auto_time_from'] || $nowTime > $rule['auto_time_to']) {
-            continue; // ليس وقته بعد أو فات وقته
+            continue;
         }
 
-        // تحقق: هل تم التسجيل اليوم بالفعل؟
-        $existsStmt = db()->prepare("
-            SELECT id FROM attendances
-            WHERE employee_id = ? AND attendance_date = ? AND type = 'in'
-            LIMIT 1
-        ");
-        $existsStmt->execute([$rule['emp_id'], $today]);
+        // جلب ورديات الفرع
+        $shiftStmt = db()->prepare("SELECT shift_number, shift_start, shift_end FROM branch_shifts WHERE branch_id = ? AND is_active = 1 ORDER BY shift_number");
+        $shiftStmt->execute([$rule['branch_id']]);
+        $branchShifts = $shiftStmt->fetchAll();
+
+        if (empty($branchShifts)) {
+            $branchShifts = [['shift_number' => 1, 'shift_start' => getSystemSetting('work_start_time', '08:00'), 'shift_end' => getSystemSetting('work_end_time', '16:00')]];
+        }
+
+        // تحديد الوردية النشطة الآن
+        $activeShift = detectActiveShift($branchShifts);
+        $shiftNum = (int)$activeShift['shift_number'];
+        $shiftStart = $activeShift['shift_start'];
+        $shiftEnd = $activeShift['shift_end'];
+
+        // حساب نافذة الوردية (بداية - 120 دقيقة إلى نهاية + 60 دقيقة)
+        $sStart = timeToMinutes($shiftStart);
+        $sEnd = timeToMinutes($shiftEnd);
+        $windowStart = ($sStart - 120 + 1440) % 1440;
+        $windowEnd = ($sEnd + 60) % 1440;
+
+        // تحقق: هل تم التسجيل لهذه الوردية اليوم بالفعل؟
+        // نبحث عن تسجيل حضور ضمن نافذة هذه الوردية
+        if ($windowStart < $windowEnd) {
+            $existsStmt = db()->prepare("
+                SELECT id FROM attendances
+                WHERE employee_id = ? AND attendance_date = ? AND type = 'in'
+                  AND (HOUR(timestamp)*60 + MINUTE(timestamp)) BETWEEN ? AND ?
+                LIMIT 1
+            ");
+            $existsStmt->execute([$rule['emp_id'], $today, $windowStart, $windowEnd]);
+        } else {
+            // نافذة تعبر منتصف الليل
+            $existsStmt = db()->prepare("
+                SELECT id FROM attendances
+                WHERE employee_id = ? AND attendance_date = ? AND type = 'in'
+                  AND ((HOUR(timestamp)*60 + MINUTE(timestamp)) >= ? OR (HOUR(timestamp)*60 + MINUTE(timestamp)) <= ?)
+                LIMIT 1
+            ");
+            $existsStmt->execute([$rule['emp_id'], $today, $windowStart, $windowEnd]);
+        }
+
         if ($existsStmt->fetch()) {
             $skipped++;
-            continue; // تم التسجيل بالفعل
+            continue; // تم التسجيل بالفعل لهذه الوردية
         }
 
         // توليد وقت عشوائي بين auto_time_from و auto_time_to
@@ -71,23 +104,13 @@ try {
         $randomTime = date('H:i:s', $randomTs);
         $timestamp = $today . ' ' . $randomTime;
 
-        // تحديد الوردية المناسبة وحساب التبكير/التأخير
-        $shiftStmt = db()->prepare("SELECT shift_number, shift_start, shift_end FROM branch_shifts WHERE branch_id = ? AND is_active = 1 ORDER BY shift_number");
-        $shiftStmt->execute([$rule['branch_id']]);
-        $branchShiftsList = $shiftStmt->fetchAll();
-        $shiftNum = !empty($branchShiftsList) ? assignTimeToShift(date('H:i', $randomTs), $branchShiftsList) : 1;
-        $matchedShift = null;
-        foreach ($branchShiftsList as $bs) {
-            if ((int)$bs['shift_number'] === $shiftNum) { $matchedShift = $bs; break; }
-        }
-        $workStart = $matchedShift
-            ? strtotime($today . ' ' . $matchedShift['shift_start'])
-            : strtotime($today . ' ' . getBranchSchedule($rule['branch_id'])['work_start_time']);
+        // حساب التبكير/التأخير
+        $workStart = strtotime($today . ' ' . $shiftStart);
         $earlyMinutes = ($randomTs < $workStart) ? max(0, (int)round(($workStart - $randomTs) / 60)) : 0;
         $graceMinutes = (int) getSystemSetting('late_grace_minutes', '0');
         $lateMinutes = ($randomTs > $workStart) ? max(0, (int)round(($randomTs - $workStart) / 60) - $graceMinutes) : 0;
 
-        // إحداثيات الفرع (كأن الموظف سجل من المركز)
+        // إحداثيات الفرع
         $branchLat = 0; $branchLon = 0;
         if ($rule['branch_id']) {
             $brSt = db()->prepare("SELECT latitude, longitude FROM branches WHERE id = ?");
@@ -99,13 +122,14 @@ try {
         // تسجيل الحضور
         db()->prepare("
             INSERT INTO attendances (employee_id, type, timestamp, attendance_date, late_minutes, early_minutes, latitude, longitude, location_accuracy, ip_address, user_agent, notes)
-            VALUES (?, 'in', ?, ?, ?, ?, ?, ?, 0, '127.0.0.1', 'auto-checkin-cron', 'تسجيل تلقائي')
-        ")->execute([$rule['emp_id'], $timestamp, $today, $lateMinutes, $earlyMinutes, $branchLat, $branchLon]);
+            VALUES (?, 'in', ?, ?, ?, ?, ?, ?, 0, '127.0.0.1', 'auto-checkin-cron', ?)
+        ")->execute([$rule['emp_id'], $timestamp, $today, $lateMinutes, $earlyMinutes, $branchLat, $branchLon, "تسجيل تلقائي - وردية {$shiftNum}"]);
 
         $autoCheckins++;
+        echo date('Y-m-d H:i:s') . " ✅ Auto check-in: {$rule['name']} (Shift {$shiftNum})\n";
     }
 } catch (Exception $e) {
     echo "Error: " . $e->getMessage() . "\n";
 }
 
-echo date('Y-m-d H:i:s') . " - Auto check-in done: {$autoCheckins} checked in, {$skipped} skipped (already registered)\n";
+echo date('Y-m-d H:i:s') . " - Auto check-in done: {$autoCheckins} checked in, {$skipped} skipped\n";

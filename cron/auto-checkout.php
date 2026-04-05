@@ -1,10 +1,10 @@
 <?php
 /**
  * ================================================================
- * cron/auto-checkout.php - Auto Check-out at end time
+ * cron/auto-checkout.php - Auto Check-out at shift end
  * ================================================================
- * يسجل انصراف تلقائي للموظفين الذين لم يسجلوا انصراف عند وصول وقت نهاية
- * الانصراف (check_out_end_time)
+ * يسجل انصراف تلقائي عند انتهاء كل وردية لمن لم يسجل
+ * يدعم الورديات المتعددة: يربط كل تسجيل حضور بانصراف خاص به
  * 
  * التشغيل: كل دقيقة عبر cron
  * مثال: * * * * * /usr/bin/php /path/to/cron/auto-checkout.php
@@ -25,125 +25,115 @@ if (php_sapi_name() !== 'cli') {
 }
 
 $now = new DateTime();
-$currentTime = $now->format('H:i:s');
 $today = $now->format('Y-m-d');
 
-// ================================================================
-// 1. AUTO CHECK-OUT للموظفين الذين لم يسجلوا انصراف
-// ================================================================
 try {
-    // جلب جميع الموظفين الذين لديهم check-in اليوم أو أمس بدون check-out
-    // (أمس لأن الوردية الثانية تتجاوز منتصف الليل)
+    // ================================================================
+    // جلب تسجيلات الحضور التي ليس لها انصراف مقابل
+    // الشرط: لا يوجد تسجيل انصراف بعد وقت الحضور لنفس الموظف ونفس التاريخ
+    // ================================================================
     $stmt = db()->prepare("
-        SELECT DISTINCT
-            e.id AS employee_id,
-            e.name,
-            e.branch_id,
+        SELECT
             ci.id AS checkin_id,
+            ci.employee_id,
             ci.timestamp AS checkin_time,
             ci.attendance_date,
             ci.latitude,
-            ci.longitude
-        FROM employees e
-        INNER JOIN attendances ci ON e.id = ci.employee_id
+            ci.longitude,
+            e.name,
+            e.branch_id
+        FROM attendances ci
+        INNER JOIN employees e ON ci.employee_id = e.id
         WHERE ci.type = 'in'
           AND ci.attendance_date IN (CURDATE(), DATE_SUB(CURDATE(), INTERVAL 1 DAY))
           AND e.is_active = 1
           AND e.deleted_at IS NULL
           AND NOT EXISTS (
               SELECT 1 FROM attendances co
-              WHERE co.employee_id = e.id
+              WHERE co.employee_id = ci.employee_id
                 AND co.type = 'out'
                 AND co.attendance_date = ci.attendance_date
+                AND co.timestamp > ci.timestamp
           )
+        ORDER BY ci.employee_id, ci.timestamp
     ");
     $stmt->execute();
-    $employees = $stmt->fetchAll();
+    $checkins = $stmt->fetchAll();
 
     $autoCheckouts = 0;
     $skipped = 0;
 
-    db()->beginTransaction();
-    try {
-        foreach ($employees as $emp) {
-            try {
-                // جلب جدول الفرع (مع الورديات)
-                $schedule = getBranchSchedule($emp['branch_id']);
-                $shifts   = $schedule['shifts'] ?? [];
+    foreach ($checkins as $ci) {
+        try {
+            // جلب ورديات الفرع
+            $shiftStmt = db()->prepare("SELECT shift_number, shift_start, shift_end FROM branch_shifts WHERE branch_id = ? AND is_active = 1 ORDER BY shift_number");
+            $shiftStmt->execute([$ci['branch_id']]);
+            $shifts = $shiftStmt->fetchAll();
 
-                // تحديد الوردية المناسبة بناءً على وقت تسجيل الدخول
-                $checkinMin = timeToMinutes(date('H:i', strtotime($emp['checkin_time'])));
-                $coEnd = $schedule['work_end_time']; // افتراضي: نهاية الوردية النشطة
-                $empShift = 1;
+            if (empty($shifts)) {
+                $shifts = [['shift_number' => 1, 'shift_start' => getSystemSetting('work_start_time', '08:00'), 'shift_end' => getSystemSetting('work_end_time', '16:00')]];
+            }
 
-                foreach ($shifts as $shift) {
-                    $shiftStart  = timeToMinutes($shift['shift_start']);
-                    $shiftEnd    = timeToMinutes($shift['shift_end']);
-                    $earlyWindow = ($shiftStart - 90 + 1440) % 1440; // 90 دقيقة قبل البداية
+            // تحديد وردية هذا التسجيل
+            $checkinTime = date('H:i', strtotime($ci['checkin_time']));
+            $shiftNum = assignTimeToShift($checkinTime, $shifts);
 
-                    if ($shiftEnd < $earlyWindow) { // يعبر منتصف الليل
-                        if ($checkinMin >= $earlyWindow || $checkinMin <= $shiftEnd) {
-                            $coEnd    = $shift['shift_end'];
-                            $empShift = (int)$shift['shift_number'];
-                            break;
-                        }
-                    } else {
-                        if ($checkinMin >= $earlyWindow && $checkinMin <= $shiftEnd) {
-                            $coEnd    = $shift['shift_end'];
-                            $empShift = (int)$shift['shift_number'];
-                            break;
-                        }
-                    }
-                }
+            // جلب بيانات الوردية المطابقة
+            $matchedShift = null;
+            foreach ($shifts as $s) {
+                if ((int)$s['shift_number'] === $shiftNum) { $matchedShift = $s; break; }
+            }
+            if (!$matchedShift) $matchedShift = $shifts[0];
 
-            // بناء الوقت المتوقع للانصراف التلقائي
-            $expectedCheckout = new DateTime($emp['attendance_date'] . ' ' . $coEnd);
-            $checkInDT = new DateTime($emp['checkin_time']);
+            $shiftEnd = $matchedShift['shift_end'];
+
+            // بناء وقت الانصراف المتوقع
+            $expectedCheckout = new DateTime($ci['attendance_date'] . ' ' . $shiftEnd);
+            $checkInDT = new DateTime($ci['checkin_time']);
 
             // إذا وقت الانصراف قبل وقت الدخول → يعني تجاوز منتصف الليل
             if ($expectedCheckout <= $checkInDT) {
                 $expectedCheckout->modify('+1 day');
             }
 
-            // إذا الوقت الحالي >= وقت الانصراف المتوقع
+            // هل انتهت الوردية؟
             if ($now >= $expectedCheckout) {
-                // تسجيل انصراف تلقائي
+                // استخدام وقت نهاية الوردية كوقت الانصراف (وليس NOW)
+                $checkoutTimestamp = $expectedCheckout->format('Y-m-d H:i:s');
+
                 $insertStmt = db()->prepare("
                     INSERT INTO attendances (
                         employee_id, type, timestamp, attendance_date,
                         latitude, longitude, location_accuracy,
                         ip_address, user_agent, notes
                     ) VALUES (
-                        :emp_id, 'out', NOW(), :att_date,
+                        :emp_id, 'out', :ts, :att_date,
                         :lat, :lon, 0,
-                        'AUTO', 'AUTO-CHECKOUT-CRON', 'انصراف تلقائي - لم يسجل الموظف'
+                        'AUTO', 'AUTO-CHECKOUT-CRON', :notes
                     )
                 ");
                 $insertStmt->execute([
-                    'emp_id'   => $emp['employee_id'],
-                    'att_date' => $emp['attendance_date'],
-                    'lat'      => $emp['latitude'],
-                    'lon'      => $emp['longitude']
+                    'emp_id'   => $ci['employee_id'],
+                    'ts'       => $checkoutTimestamp,
+                    'att_date' => $ci['attendance_date'],
+                    'lat'      => $ci['latitude'],
+                    'lon'      => $ci['longitude'],
+                    'notes'    => "انصراف تلقائي - وردية {$shiftNum}"
                 ]);
                 $autoCheckouts++;
-                echo "[{$now->format('Y-m-d H:i:s')}] ✅ AUTO CHECK-OUT (Shift {$empShift}): {$emp['name']} (ID {$emp['employee_id']})\n";
+                echo "[{$now->format('Y-m-d H:i:s')}] ✅ AUTO-CHECKOUT Shift {$shiftNum}: {$ci['name']} (checkin #{$ci['checkin_id']})\n";
             } else {
                 $skipped++;
             }
         } catch (Exception $e) {
-            echo "[{$now->format('Y-m-d H:i:s')}] ❌ خطأ في تسجيل انصراف {$emp['name']}: " . $e->getMessage() . "\n";
+            echo "[{$now->format('Y-m-d H:i:s')}] ❌ Error for {$ci['name']}: " . $e->getMessage() . "\n";
         }
     }
-    db()->commit();
-    } catch (Exception $e) {
-        db()->rollBack();
-        echo "[{$now->format('Y-m-d H:i:s')}] ❌ خطأ في العملية: " . $e->getMessage() . "\n";
-    }
 
-    echo "[{$now->format('Y-m-d H:i:s')}] 📊 إجمالي: {$autoCheckouts} انصراف تلقائي، {$skipped} تم تخطيهم (لم يحن الوقت)\n";
+    echo "[{$now->format('Y-m-d H:i:s')}] 📊 Done: {$autoCheckouts} auto-checkouts, {$skipped} pending\n";
 
 } catch (Exception $e) {
-    echo "[{$now->format('Y-m-d H:i:s')}] ❌ خطأ في AUTO CHECK-OUT: " . $e->getMessage() . "\n";
+    echo "[{$now->format('Y-m-d H:i:s')}] ❌ Error: " . $e->getMessage() . "\n";
 }
 
 echo "[{$now->format('Y-m-d H:i:s')}] ✅ Cron job completed\n";
