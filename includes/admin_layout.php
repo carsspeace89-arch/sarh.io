@@ -106,6 +106,13 @@
             <a href="stars.php" class="nav-item <?= ($activePage ?? '') === 'stars' ? 'active' : '' ?>">
                 <span class="nav-icon"><?= svgIcon('star', 18) ?></span> نظام النجوم
             </a>
+            <a href="inbox-send.php" class="nav-item <?= ($activePage ?? '') === 'inbox-send' ? 'active' : '' ?>">
+                <span class="nav-icon"><?= svgIcon('bell', 18) ?></span> إرسال للموظفين
+            </a>
+            <a href="inbox-messages.php" class="nav-item <?= ($activePage ?? '') === 'inbox-messages' ? 'active' : '' ?>" style="position:relative">
+                <span class="nav-icon"><?= svgIcon('audit', 18) ?></span> صناديق الوارد
+                <span class="notif-badge" id="sidebarInboxBadge" style="display:none;position:absolute;left:14px;top:8px;background:#10B981;color:#fff;font-size:.65rem;padding:1px 6px;border-radius:10px;font-weight:700"></span>
+            </a>
             <a href="leaves.php" class="nav-item <?= ($activePage ?? '') === 'leaves' ? 'active' : '' ?>">
                 <span class="nav-icon"><?= svgIcon('leave', 18) ?></span> إدارة الإجازات
             </a>

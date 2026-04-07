@@ -121,6 +121,7 @@ $badgeClass = $todayStatus === 'checked_in' ? 'in' : ($todayStatus === 'checked_
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="stylesheet" href="<?= SITE_URL ?>/assets/fonts/tajawal.css">
   <link rel="stylesheet" href="<?= SITE_URL ?>/assets/css/radar.css?v=<?= time() ?>">
+  <script>window.SITE_URL = '<?= SITE_URL ?>';</script>
 </head>
 
 <body>
@@ -244,6 +245,17 @@ $badgeClass = $todayStatus === 'checked_in' ? 'in' : ($todayStatus === 'checked_
         </div>
       <?php endif; ?>
     </div>
+
+    <!-- FLOATING INBOX BUTTON -->
+    <a class="inbox-float-btn" id="inboxFloatBtn"
+       href="<?= SITE_URL ?>/employee/my-inbox.php?token=<?= urlencode($token) ?>"
+       title="صندوق الوارد">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20" style="display:block;margin:auto">
+        <polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/>
+        <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>
+      </svg>
+      <span class="inbox-float-badge" id="inboxFloatBadge" style="display:none"></span>
+    </a>
 
     <!-- FLOATING SECRET REPORT BUTTON -->
     <button class="sr-float-btn" onclick="openReportModal()" title="تقرير سري">
@@ -825,6 +837,28 @@ if ('serviceWorker' in navigator) {
         });
     }
 }
+</script>
+
+<script>
+// ── تحديث شارة صندوق الوارد ──
+(function updateInboxBadge() {
+    const token = <?= json_encode($token) ?>;
+    if (!token) return;
+    fetch(window.SITE_URL + '/api/inbox-count.php?token=' + encodeURIComponent(token))
+        .then(r => r.json())
+        .then(d => {
+            const badge = document.getElementById('inboxFloatBadge');
+            if (!badge) return;
+            if (d.count > 0) {
+                badge.textContent = d.count > 99 ? '99+' : d.count;
+                badge.style.display = 'inline-block';
+            } else {
+                badge.style.display = 'none';
+            }
+        })
+        .catch(() => {});
+    setTimeout(updateInboxBadge, 60000);
+})();
 </script>
 </body>
 

@@ -481,6 +481,25 @@ body,html{touch-action:manipulation;overscroll-behavior:none}
 }
 .switch-user-float-btn:active{transform:scale(.88);background:rgba(249,115,22,.25)}
 
+/* ── INBOX FLOATING BUTTON ── */
+.inbox-float-btn{
+  position:fixed;bottom:80px;left:22px;z-index:9997;
+  width:48px;height:48px;border-radius:50%;
+  background:rgba(16,185,129,.1);border:none;
+  box-shadow:0 2px 14px rgba(16,185,129,.15);
+  cursor:pointer;transition:all .3s ease;
+  color:rgba(5,150,105,.9);
+  display:flex;align-items:center;justify-content:center;
+  padding:0;text-decoration:none;
+}
+.inbox-float-btn:active{transform:scale(.88);background:rgba(16,185,129,.25)}
+.inbox-float-badge{
+  position:absolute;top:-3px;right:-3px;
+  background:#EF4444;color:#fff;font-size:.55rem;
+  padding:1px 5px;border-radius:10px;font-weight:800;
+  font-family:sans-serif;min-width:16px;text-align:center;
+}
+
 /* Modal Overlay */
 .sr-modal-overlay{
   position:fixed;inset:0;z-index:10000;
