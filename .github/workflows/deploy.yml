@@ -16,22 +16,22 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.2'
+          php-version: '8.1'
           extensions: mbstring, xml, ctype, json, pdo, pdo_mysql, redis
           coverage: none
 
       - name: Validate composer.json
-        run: composer validate --no-check-publish
+        run: composer validate
 
       - name: Install dependencies
-        run: composer install --prefer-dist --no-progress
+        run: composer install --prefer-dist --no-progress --no-suggest
 
       - name: Run PHPUnit tests
         run: |
-          if [ -f phpunit.xml ] && [ -x vendor/bin/phpunit ]; then
+          if [ -f phpunit.xml ]; then
             vendor/bin/phpunit --testdox
           else
-            echo "Skipping PHPUnit: configuration or binary is missing"
+            echo "⚠️  No tests configured yet"
           fi
 
   deploy:
