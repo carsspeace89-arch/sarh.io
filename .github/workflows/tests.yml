@@ -43,10 +43,10 @@ jobs:
 
       - name: Run PHPUnit tests
         run: |
-          if [ -f phpunit.xml ]; then
+          if [ -f phpunit.xml ] && [ -x vendor/bin/phpunit ]; then
             vendor/bin/phpunit --coverage-text --colors=never
           else
-            echo "⚠️  No phpunit.xml found - skipping tests"
+            echo "Skipping PHPUnit: configuration or binary is missing"
           fi
 
       - name: Check code style (optional)

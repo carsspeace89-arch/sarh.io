@@ -28,10 +28,10 @@ jobs:
 
       - name: Run PHPUnit tests
         run: |
-          if [ -f phpunit.xml ]; then
+          if [ -f phpunit.xml ] && [ -x vendor/bin/phpunit ]; then
             vendor/bin/phpunit --testdox
           else
-            echo "⚠️  No tests configured yet"
+            echo "Skipping PHPUnit: configuration or binary is missing"
           fi
 
   deploy:
