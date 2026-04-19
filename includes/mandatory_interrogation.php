@@ -63,13 +63,13 @@ function mi_seed_default_template(): void
     }
 
     $defaultQuestions = [
-        'من هو آخر موظف استلمت منه المركبة أو سلمته المركبة؟',
-        'اذكر الحالة الفنية عند الاستلام (حرارة، صوت، سحب، عدادات إنذار، زيوت).',
-        'ما أول علامة خلل ظهرت معك؟ ومتى ظهرت بالتوقيت التقريبي؟',
-        'هل أبلغت الإدارة أو المشرف؟ اذكر طريقة البلاغ ووقته إن وجد.',
-        'اكتب تسلسل ما حدث حتى لحظة التوقف النهائي للمركبة.',
-        'من هم الموظفون الذين استخدموا المركبة خلال آخر فترة حسب علمك؟',
-        'أي تفاصيل إضافية قد تساعد في تحديد السبب والمسؤولية؟'
+        ['question' => 'من هو آخر موظف استلمت منه المركبة أو سلمته المركبة؟', 'type' => 'text', 'options' => []],
+        ['question' => 'اذكر الحالة الفنية عند الاستلام (حرارة، صوت، سحب، عدادات إنذار، زيوت).', 'type' => 'text', 'options' => []],
+        ['question' => 'ما أول علامة خلل ظهرت معك؟ ومتى ظهرت بالتوقيت التقريبي؟', 'type' => 'text', 'options' => []],
+        ['question' => 'هل أبلغت الإدارة أو المشرف؟ اذكر طريقة البلاغ ووقته إن وجد.', 'type' => 'text', 'options' => []],
+        ['question' => 'اكتب تسلسل ما حدث حتى لحظة التوقف النهائي للمركبة.', 'type' => 'text', 'options' => []],
+        ['question' => 'من هم الموظفون الذين استخدموا المركبة خلال آخر فترة حسب علمك؟', 'type' => 'text', 'options' => []],
+        ['question' => 'أي تفاصيل إضافية قد تساعد في تحديد السبب والمسؤولية؟', 'type' => 'text', 'options' => []],
     ];
 
     $sql = "INSERT INTO mandatory_interrogation_templates (title, description, questions_json, is_active, is_default, created_by)
@@ -101,13 +101,7 @@ function mi_create_template(string $title, array $questions, ?string $descriptio
         throw new RuntimeException('عنوان النموذج مطلوب');
     }
 
-    $clean = [];
-    foreach ($questions as $q) {
-        $q = trim((string)$q);
-        if ($q !== '') {
-            $clean[] = $q;
-        }
-    }
+    $clean = mi_normalize_questions($questions);
 
     if (count($clean) === 0) {
         throw new RuntimeException('أضف سؤالا واحدا على الأقل');
@@ -117,6 +111,60 @@ function mi_create_template(string $title, array $questions, ?string $descriptio
                            VALUES (?, ?, ?, 1, 0, ?)");
     $stmt->execute([$title, trim((string)$description) ?: null, json_encode($clean, JSON_UNESCAPED_UNICODE), $adminId]);
     return (int)db()->lastInsertId();
+}
+
+function mi_update_template(int $templateId, string $title, array $questions, ?string $description, int $adminId): bool
+{
+    mi_ensure_tables();
+
+    $title = trim($title);
+    if ($templateId <= 0 || $title === '') {
+        return false;
+    }
+
+    $clean = mi_normalize_questions($questions);
+    if (count($clean) === 0) {
+        return false;
+    }
+
+    $stmt = db()->prepare("UPDATE mandatory_interrogation_templates
+                           SET title = ?, description = ?, questions_json = ?, updated_at = NOW(), created_by = ?
+                           WHERE id = ?");
+    return $stmt->execute([
+        $title,
+        trim((string)$description) ?: null,
+        json_encode($clean, JSON_UNESCAPED_UNICODE),
+        $adminId,
+        $templateId,
+    ]);
+}
+
+function mi_delete_template(int $templateId): bool
+{
+    mi_ensure_tables();
+    if ($templateId <= 0) {
+        return false;
+    }
+
+    $countStmt = db()->prepare("SELECT COUNT(*) FROM mandatory_interrogation_assignments WHERE template_id = ?");
+    $countStmt->execute([$templateId]);
+    $hasAssignments = (int)$countStmt->fetchColumn() > 0;
+
+    if ($hasAssignments) {
+        $stmt = db()->prepare("UPDATE mandatory_interrogation_templates SET is_active = 0, is_default = 0 WHERE id = ?");
+        return $stmt->execute([$templateId]);
+    }
+
+    $stmt = db()->prepare("DELETE FROM mandatory_interrogation_templates WHERE id = ?");
+    return $stmt->execute([$templateId]);
+}
+
+function mi_get_template(int $templateId): ?array
+{
+    mi_ensure_tables();
+    $stmt = db()->prepare("SELECT * FROM mandatory_interrogation_templates WHERE id = ? LIMIT 1");
+    $stmt->execute([$templateId]);
+    return $stmt->fetch() ?: null;
 }
 
 function mi_get_latest_assignment(int $employeeId): ?array
@@ -235,17 +283,68 @@ function mi_review_assignment(int $assignmentId, string $status, int $adminId, ?
 
 function mi_get_questions(array $assignmentRow): array
 {
-    $questions = [];
-    if (!empty($assignmentRow['questions_json'])) {
-        $decoded = json_decode((string)$assignmentRow['questions_json'], true);
-        if (is_array($decoded)) {
-            foreach ($decoded as $q) {
-                $q = trim((string)$q);
-                if ($q !== '') {
-                    $questions[] = $q;
+    if (empty($assignmentRow['questions_json'])) {
+        return [];
+    }
+
+    $decoded = json_decode((string)$assignmentRow['questions_json'], true);
+    if (!is_array($decoded)) {
+        return [];
+    }
+
+    return mi_normalize_questions($decoded);
+}
+
+function mi_normalize_questions(array $questions): array
+{
+    $normalized = [];
+
+    foreach ($questions as $item) {
+        if (is_array($item)) {
+            $text = trim((string)($item['question'] ?? $item['text'] ?? ''));
+            $type = trim((string)($item['type'] ?? 'text'));
+            $type = in_array($type, ['text', 'options'], true) ? $type : 'text';
+
+            $options = [];
+            $rawOptions = $item['options'] ?? [];
+            if (!is_array($rawOptions)) {
+                $rawOptions = [];
+            }
+            foreach ($rawOptions as $opt) {
+                $opt = trim((string)$opt);
+                if ($opt !== '') {
+                    $options[] = $opt;
                 }
             }
+
+            if ($text === '') {
+                continue;
+            }
+
+            if ($type === 'options' && count($options) < 2) {
+                $type = 'text';
+                $options = [];
+            }
+
+            $normalized[] = [
+                'question' => $text,
+                'type' => $type,
+                'options' => $options,
+            ];
+            continue;
         }
+
+        $text = trim((string)$item);
+        if ($text === '') {
+            continue;
+        }
+
+        $normalized[] = [
+            'question' => $text,
+            'type' => 'text',
+            'options' => [],
+        ];
     }
-    return $questions;
+
+    return $normalized;
 }
