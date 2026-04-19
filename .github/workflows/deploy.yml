@@ -3,10 +3,43 @@ name: Deploy to Hostinger
 on:
   push:
     branches: [master]
+  workflow_dispatch: # يسمح بالتشغيل اليدوي
 
 jobs:
-  deploy:
+  test:
+    name: Run Tests
     runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          extensions: mbstring, xml, ctype, json, pdo, pdo_mysql, redis
+          coverage: none
+
+      - name: Validate composer.json
+        run: composer validate --strict
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-progress --no-suggest
+
+      - name: Run PHPUnit tests
+        run: |
+          if [ -f phpunit.xml ]; then
+            vendor/bin/phpunit --testdox
+          else
+            echo "⚠️  No tests configured yet"
+          fi
+
+  deploy:
+    name: Deploy to Production
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master'
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -20,6 +53,38 @@ jobs:
           port: ${{ secrets.PORT }}
           script: |
             cd ~/domains/sarh.io/public_html
+            
+            # تحديث الكود
             git fetch origin master
             git reset --hard origin/master
-            echo "Deployed at $(date)"
+            
+            # تحديث dependencies
+            if [ -f composer.json ]; then
+              composer install --no-dev --optimize-autoloader
+            fi
+            
+            # تشغيل migrations
+            if [ -f migrations/migrate.php ]; then
+              php migrations/migrate.php
+            fi
+            
+            # مسح الكاش
+            if [ -d cache ]; then
+              rm -rf cache/*
+            fi
+            
+            echo "✅ Deployed successfully at $(date)"
+
+      - name: Notify on success
+        if: success()
+        run: |
+          echo "🎉 Deployment successful!"
+          echo "Repository: ${{ github.repository }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Author: ${{ github.actor }}"
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "❌ Deployment failed!"
+          echo "Check logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
