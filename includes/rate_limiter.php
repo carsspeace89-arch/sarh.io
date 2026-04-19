@@ -1,4 +1,5 @@
 <?php
+// ⛔ LEGACY — DO NOT EXTEND | All new code must go to src/* or api/v1/*
 // =============================================================
 // includes/rate_limiter.php - حماية Rate Limiting للـ API
 // =============================================================
@@ -14,7 +15,20 @@
  * @return bool true إذا تجاوز الحد
  */
 function isRateLimited(int $maxRequests = 60, int $windowSeconds = 60, string $prefix = 'api'): bool {
+    // Always use REMOTE_ADDR (cannot be spoofed)
+    // Only trust X-Forwarded-For if behind known proxy (Cloudflare, etc.)
     $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+    
+    // Optional: trust X-Forwarded-For only from known proxies
+    $trustedProxies = ['127.0.0.1', '::1']; // Add your CDN/proxy IPs here
+    if (in_array($ip, $trustedProxies, true) && !empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+        $forwardedIps = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
+        $clientIp = trim($forwardedIps[0]);
+        if (filter_var($clientIp, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIVATE_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+            $ip = $clientIp;
+        }
+    }
+    
     $ip = preg_replace('/[^a-zA-Z0-9._:-]/', '_', $ip);
     
     $rateLimitDir = sys_get_temp_dir() . '/attendance_rate_limit';

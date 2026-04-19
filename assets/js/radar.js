@@ -693,36 +693,74 @@ function updateUI(dist) {
 // GPS
 // ================================================================
 var gpsPermissionDenied = false;
+var bestGpsAccuracy = Infinity;
+var gpsSamples = [];
 
 function initGPS() {
   if (!navigator.geolocation) { setGPS('error', T.gps_no_support); showGPSModal(); return; }
   setGPS('getting', T.gps_locating);
+
+  // قراءة سريعة مخزنة أولاً
+  navigator.geolocation.getCurrentPosition(function(p) {
+    processGPSReading(p);
+  }, function(){}, { enableHighAccuracy: false, timeout: 3000, maximumAge: 60000 });
+
+  // مراقبة مستمرة بدقة عالية
   navigator.geolocation.watchPosition(function(p) {
-    userLat = p.coords.latitude; userLon = p.coords.longitude; userAcc = p.coords.accuracy; locReady = true;
-    gpsPermissionDenied = false; hideGPSModal();
-    // Distance FROM employee TO branch
-    var dist = haversine(userLat, userLon, CFG.workLat, CFG.workLon);
-    userDist = dist;
-    // Bearing FROM employee TO branch (radians)
-    branchBearing = bearingCalc(userLat, userLon, CFG.workLat, CFG.workLon);
-    var a = userAcc < 50 ? T.gps_high_accuracy : userAcc < 150 ? T.gps_med_accuracy : T.gps_low_accuracy;
-    setGPS('ready', a + ' ±' + Math.round(userAcc) + (isArabic ? ' م' : ' m'));
-    updateUI(dist);
-    updateSonar(dist);
-    updateMapUser(userLat, userLon);
-    document.querySelectorAll('.btn').forEach(function(b){ b.disabled = false; });
-    // Auto check-in if inside geofence and not yet checked in
-    if (!autoCheckInDone && STATE.todayStatus === 'none' && dist <= CFG.geofenceRadius) {
-      autoCheckInDone = true;
-      submitAttendance('in', false);
-    }
+    processGPSReading(p);
   }, function(e) {
     var msgs = {1: T.gps_allow, 2: T.gps_enable, 3: T.gps_timeout};
     setGPS('error', msgs[e.code] || T.gps_error);
     silentReport('gps_error', msgs[e.code] || T.gps_error, 'code=' + e.code);
     if (e.code === 1) { gpsPermissionDenied = true; showGPSModal(); }
     document.querySelectorAll('.btn').forEach(function(b){ b.disabled = false; });
-  }, {enableHighAccuracy: true, timeout: 15000, maximumAge: 10000});
+  }, {enableHighAccuracy: true, timeout: 20000, maximumAge: 0});
+}
+
+function processGPSReading(p) {
+    var acc = p.coords.accuracy;
+    var lat = p.coords.latitude;
+    var lon = p.coords.longitude;
+
+    // حفظ العينة
+    gpsSamples.push({ lat: lat, lon: lon, acc: acc, ts: Date.now() });
+    if (gpsSamples.length > 10) gpsSamples.shift();
+
+    // قبول فقط إذا أدق أو لم يكن هناك موقع
+    var isMoreAccurate = acc < bestGpsAccuracy;
+    var isFirst = !locReady;
+
+    if (isMoreAccurate || isFirst) {
+        userLat = lat; userLon = lon; userAcc = acc; locReady = true;
+        bestGpsAccuracy = Math.min(bestGpsAccuracy, acc);
+        gpsPermissionDenied = false; hideGPSModal();
+
+        var dist = haversine(userLat, userLon, CFG.workLat, CFG.workLon);
+        userDist = dist;
+        branchBearing = bearingCalc(userLat, userLon, CFG.workLat, CFG.workLon);
+        var a = acc < 30 ? T.gps_high_accuracy : acc < 80 ? T.gps_med_accuracy : T.gps_low_accuracy;
+        setGPS('ready', a + ' ±' + Math.round(acc) + (isArabic ? ' م' : ' m'));
+        updateUI(dist);
+        updateSonar(dist);
+        updateMapUser(userLat, userLon);
+        document.querySelectorAll('.btn').forEach(function(b){ b.disabled = false; });
+
+        if (!autoCheckInDone && STATE.todayStatus === 'none' && dist <= CFG.geofenceRadius) {
+            autoCheckInDone = true;
+            submitAttendance('in', false);
+        }
+    } else if (acc <= bestGpsAccuracy * 1.5) {
+        // تحديث الموقع إذا كانت القراءة قريبة من الأفضل ولكن أحدث
+        userLat = lat; userLon = lon; userAcc = acc;
+        gpsPermissionDenied = false; hideGPSModal();
+
+        var dist = haversine(userLat, userLon, CFG.workLat, CFG.workLon);
+        userDist = dist;
+        branchBearing = bearingCalc(userLat, userLon, CFG.workLat, CFG.workLon);
+        updateUI(dist);
+        updateSonar(dist);
+        updateMapUser(userLat, userLon);
+    }
 }
 
 function setGPS(s, t) {
@@ -810,7 +848,18 @@ function submitAttendance(type, manual) {
     .then(function(r){ return r.json(); })
     .then(function(d){
       if (sp) sp.classList.remove('show');
-      if (d.success) { showMsg('success', d.message); setTimeout(function(){ location.reload(); }, 2000); }
+      if (d.success) {
+        // Play success sound from audio library
+        var soundCat = type === 'in' ? 'checkin_success' : 'checkout_success';
+        if (window._audioSettings && window._audioSettings[soundCat]) {
+          try {
+            var snd = new Audio(window._audioSettings[soundCat].url);
+            snd.volume = window._audioSettings[soundCat].volume || 1;
+            snd.play().catch(function(){});
+          } catch(e){}
+        }
+        showMsg('success', d.message); setTimeout(function(){ location.reload(); }, 2000);
+      }
       else { silentReport('attendance_fail', d.message, type); if (manual) showMsg('error', d.message); btns.forEach(function(b){ b.disabled = false; }); }
     }).catch(function(){
       silentReport('attendance_network', T.msg_error_network, type);
@@ -1044,13 +1093,13 @@ function updateSonar(dist) {
   window.sonarProximity = proximity;
 
   if (inside) {
-    // عند الدخول للنطاق: أوقف صوت الرادار وشغل موسيقى سنوب دوغ
+    // عند الدخول للنطاق: أوقف صوت الرادار وشغل صوت النطاق
     if (sonarInterval) { clearInterval(sonarInterval); sonarInterval = null; }
     stopContinuousTone();
-    playSnoopMusic();
+    playGeofenceMusic();
   } else {
     // خارج النطاق: أوقف الموسيقى وشغل صوت الرادار
-    stopSnoopMusic();
+    stopGeofenceMusic();
     stopContinuousTone();
     var interval = 2000 - (proximity * 1800);
     interval = Math.max(200, Math.min(2000, interval));
@@ -1060,22 +1109,39 @@ function updateSonar(dist) {
   }
 }
 
-// --- تشغيل موسيقى سنوب دوغ عند الدخول للنطاق ---
-var snoopAudio = null;
-function playSnoopMusic() {
-  if (snoopAudio && !snoopAudio.paused) return;
-  if (!snoopAudio) {
-    snoopAudio = new Audio('/assets/audio/snoop-dogg-drop-it-like-its-hot.mp3');
-    snoopAudio.loop = true;
-    snoopAudio.volume = 1.0;
-  }
-  snoopAudio.currentTime = 0;
-  snoopAudio.play().catch(function(){});
+// --- تشغيل صوت النطاق من المكتبة الصوتية ---
+var geofenceAudio = null;
+var geofenceAudioCfg = null; // {url, play_mode, volume}
+var audioSettingsLoaded = false;
+
+function loadAudioSettings() {
+  if (audioSettingsLoaded) return;
+  audioSettingsLoaded = true;
+  var apiUrl = (URLS.checkIn || '').replace('/api/check-in.php', '/api/audio-settings.php');
+  fetch(apiUrl).then(function(r){ return r.json(); }).then(function(d){
+    if (d.success && d.audio) {
+      if (d.audio.geofence_enter) geofenceAudioCfg = d.audio.geofence_enter;
+      // Store all categories for future use
+      window._audioSettings = d.audio;
+    }
+  }).catch(function(){});
 }
-function stopSnoopMusic() {
-  if (snoopAudio && !snoopAudio.paused) {
-    snoopAudio.pause();
-    snoopAudio.currentTime = 0;
+
+function playGeofenceMusic() {
+  if (!geofenceAudioCfg) return;
+  if (geofenceAudio && !geofenceAudio.paused) return;
+  if (!geofenceAudio) {
+    geofenceAudio = new Audio(geofenceAudioCfg.url);
+    geofenceAudio.loop = (geofenceAudioCfg.play_mode === 'loop');
+    geofenceAudio.volume = geofenceAudioCfg.volume || 1.0;
+  }
+  geofenceAudio.currentTime = 0;
+  geofenceAudio.play().catch(function(){});
+}
+function stopGeofenceMusic() {
+  if (geofenceAudio && !geofenceAudio.paused) {
+    geofenceAudio.pause();
+    geofenceAudio.currentTime = 0;
   }
 }
 
@@ -1116,14 +1182,12 @@ document.addEventListener('visibilitychange', function() {
 // INIT
 // ================================================================
 window.addEventListener('load', function() {
-  resizeCanvas(); initGPS(); playRadarSound(); startKeepAlive();
+  resizeCanvas(); initGPS(); playRadarSound(); startKeepAlive(); loadAudioSettings();
   loadLeaflet(function(){ initRadarMap(); });
   document.addEventListener('touchstart', function _t() { playRadarSound(); document.removeEventListener('touchstart', _t); }, {once: true});
   document.addEventListener('click', function _c() { playRadarSound(); document.removeEventListener('click', _c); }, {once: true});
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register(URLS.worker).catch(function() {
-      navigator.serviceWorker.register(URLS.sw).catch(function(){});
-    });
+    navigator.serviceWorker.register(URLS.sw, { scope: '/' }).catch(function(){});
   }
 });
 window.addEventListener('resize', resizeCanvas);

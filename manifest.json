@@ -1,7 +1,7 @@
 {
     "name": "نظام الحضور والانصراف",
     "short_name": "الحضور",
-    "description": "نظام تسجيل الحضور والانصراف الجغرافي",
+    "description": "نظام تسجيل الحضور والانصراف الجغرافي - صرح",
     "start_url": "./employee/attendance.php",
     "scope": "./",
     "display": "standalone",
@@ -12,10 +12,30 @@
     "dir": "rtl",
     "icons": [
         {
-            "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect x='2' y='2' width='22' height='22' rx='4' fill='%23F97316' opacity='.9'/%3E%3Crect x='16' y='16' width='22' height='22' rx='4' fill='%23EA580C'/%3E%3C/svg%3E",
-            "sizes": "any",
+            "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%23F97316'/%3E%3Ctext x='256' y='340' text-anchor='middle' font-size='280' font-weight='900' font-family='sans-serif' fill='white'%3E%D8%B5%3C/text%3E%3C/svg%3E",
+            "sizes": "512x512",
             "type": "image/svg+xml",
-            "purpose": "any maskable"
+            "purpose": "any"
+        },
+        {
+            "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%23F97316'/%3E%3Ctext x='256' y='340' text-anchor='middle' font-size='280' font-weight='900' font-family='sans-serif' fill='white'%3E%D8%B5%3C/text%3E%3C/svg%3E",
+            "sizes": "192x192",
+            "type": "image/svg+xml",
+            "purpose": "maskable"
+        }
+    ],
+    "shortcuts": [
+        {
+            "name": "تسجيل الحضور",
+            "short_name": "حضور",
+            "url": "./employee/attendance.php",
+            "icons": [{"src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'%3E%3Ccircle cx='48' cy='48' r='44' fill='%2316A34A'/%3E%3Cpath d='M30 48l12 12 24-24' stroke='white' stroke-width='6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E", "sizes": "96x96", "type": "image/svg+xml"}]
+        },
+        {
+            "name": "صندوق الوارد",
+            "short_name": "الوارد",
+            "url": "./employee/my-inbox.php",
+            "icons": [{"src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'%3E%3Ccircle cx='48' cy='48' r='44' fill='%233B82F6'/%3E%3Cpath d='M28 38l20 14 20-14M24 32h48v32H24z' stroke='white' stroke-width='4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E", "sizes": "96x96", "type": "image/svg+xml"}]
         }
     ],
     "categories": ["business", "productivity"]

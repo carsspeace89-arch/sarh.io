@@ -36,6 +36,10 @@ abstract class Model
      */
     public function all(array $conditions = [], string $orderBy = 'id DESC', ?int $limit = null): array
     {
+        // Validate ORDER BY to prevent SQL injection
+        if (!preg_match('/^[a-zA-Z_][a-zA-Z0-9_.]*(?:\s+(?:ASC|DESC))?(?:\s*,\s*[a-zA-Z_][a-zA-Z0-9_.]*(?:\s+(?:ASC|DESC))?)*$/i', $orderBy)) {
+            $orderBy = 'id DESC';
+        }
         $sql = "SELECT * FROM {$this->table}";
         $params = [];
 
@@ -176,6 +180,8 @@ abstract class Model
             $sql .= ' WHERE ' . implode(' AND ', $where);
         }
 
+        // Validate orderDir to prevent SQL injection
+        $orderDir = strtoupper($orderDir) === 'ASC' ? 'ASC' : 'DESC';
         $sql .= " ORDER BY {$this->primaryKey} {$orderDir} LIMIT " . ((int)$perPage + 1);
 
         $stmt = $this->db->prepare($sql);
@@ -204,5 +210,74 @@ abstract class Model
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
         return $stmt;
+    }
+
+    // =================================================================
+    // Relationship Methods
+    // =================================================================
+
+    /**
+     * HasMany relationship: e.g., Employee->attendances()
+     */
+    protected function hasMany(string $modelClass, string $foreignKey, int $localId, array $extraConditions = [], string $orderBy = 'id DESC', ?int $limit = null): array
+    {
+        $related = new $modelClass();
+        $sql = "SELECT * FROM {$related->getTable()} WHERE {$foreignKey} = ?";
+        $params = [$localId];
+
+        foreach ($extraConditions as $col => $val) {
+            if ($val === null) {
+                $sql .= " AND {$col} IS NULL";
+            } else {
+                $sql .= " AND {$col} = ?";
+                $params[] = $val;
+            }
+        }
+
+        // Validate ORDER BY to prevent SQL injection
+        if (!preg_match('/^[a-zA-Z_][a-zA-Z0-9_.]*(?:\s+(?:ASC|DESC))?(?:\s*,\s*[a-zA-Z_][a-zA-Z0-9_.]*(?:\s+(?:ASC|DESC))?)*$/i', $orderBy)) {
+            $orderBy = 'id DESC';
+        }
+        $sql .= " ORDER BY {$orderBy}";
+        if ($limit !== null) {
+            $sql .= " LIMIT " . (int)$limit;
+        }
+
+        return $this->query($sql, $params)->fetchAll();
+    }
+
+    /**
+     * BelongsTo relationship: e.g., Attendance->employee()
+     */
+    protected function belongsTo(string $modelClass, string $foreignKey, ?int $foreignId): ?array
+    {
+        if ($foreignId === null) return null;
+        $related = new $modelClass();
+        return $related->find($foreignId);
+    }
+
+    /**
+     * Get table name (for relationship methods)
+     */
+    public function getTable(): string
+    {
+        return $this->table;
+    }
+
+    /**
+     * Get a new QueryBuilder for this table
+     */
+    public function newQuery(): QueryBuilder
+    {
+        $qb = new QueryBuilder($this->db);
+        return $qb->table($this->table);
+    }
+
+    /**
+     * Tenant-scoped query
+     */
+    public function forTenant(int $tenantId): QueryBuilder
+    {
+        return $this->newQuery()->forTenant($tenantId);
     }
 }

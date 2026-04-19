@@ -11,15 +11,19 @@
 - **تقارير شاملة** — يومي، شهري، تأخير، انصراف مبكر، غياب، مقارنة الفروع، رسوم بيانية
 - **إدارة الإجازات** — طلب وموافقة ورفض مع أنواع متعددة
 - **نقل الموظفين** — تحويل بين الفروع مع سجل كامل
-- **نظام الإشعارات** — تنبيهات داخلية للمشرف
+- **نظام الإشعارات الفورية (Push)** — إشعارات Web Push عبر VAPID + إشعارات داخلية للمشرف
+- **صندوق وارد الموظف** — رسائل + إعلانات + تنبيهات الوردية
+- **إعلانات الإدارة (Announcements)** — شريط أخبار متحرك + دفع Push فوري
 - **نسخ احتياطي** — تصدير واستعادة قاعدة البيانات
 - **سجل المراجعة** — تتبع جميع عمليات الإدارة
 - **بلاغات سرية** — زر عائم للموظفين لإرسال بلاغات مع نص/صور/صوت
 - **وضع مظلم** — دعم كامل للوضع الليلي
-- **واجهة عربية RTL** — تصميم برتقالي عصري
-- **خريطة تفاعلية + رادار GPS** — مع صوت سونار
-- **PWA** — تطبيق ويب تقدمي مع Service Worker
+- **واجهة عربية RTL** — تصميم عصري مع Glass Morphism وتأثيرات بصرية متقدمة
+- **خريطة تفاعلية + رادار GPS** — مع صوت سونار وبوصلة
+- **PWA كامل** — Service Worker v9 مع Push + Offline + Cache
 - **خروج تلقائي** — عبر Cron Job
+- **صورة الملف الشخصي** — رفع وتغيير صورة الموظف
+- **مكتبة صوتية** — API لإدارة ملفات الصوت
 
 ## التقنيات
 
@@ -30,22 +34,98 @@
 | الواجهة | HTML5 + CSS3 + JavaScript (Vanilla) |
 | الخرائط | Leaflet.js + ArcGIS Tiles |
 | الخطوط | Tajawal (Google Fonts) |
+| الإشعارات | Web Push (VAPID + ECDH + AES-128-GCM) |
+| التخزين المؤقت | Service Worker v9 + Cache API |
+
+## البنية المعمارية
+
+```
+├── admin/              # لوحة تحكم المشرف
+├── employee/           # واجهة الموظف (attendance.php)
+├── api/                # واجهات API (إشعارات، Push، صور، إعلانات)
+├── includes/           # ملفات PHP مشتركة (config, functions, auth)
+├── src/Services/       # خدمات PHP (NotificationService)
+├── assets/css/         # ملفات CSS (radar.css, admin.css, dark-mode.css)
+├── assets/js/          # جافاسكربت
+├── migrations/         # ملفات ترحيل قاعدة البيانات
+├── cron/               # مهام مجدولة
+├── sw.js               # Service Worker
+└── manifest.json       # PWA Manifest
+```
+
+## نظام الإشعارات الفورية (Push Notifications)
+
+### كيفية العمل
+1. التوليد: يولّد المشرف مفاتيح VAPID من `الإعدادات → توليد مفاتيح VAPID`
+2. الاشتراك: عند فتح الموظف لصفحة الحضور، يُشترك تلقائياً في Push عبر `api/push-subscribe.php`
+3. الإرسال: عند إنشاء إعلان جديد، يُرسل Push لجميع موظفي الفرع المستهدف
+4. الاستلام: Service Worker يستقبل الإشعار ويعرضه حتى لو التطبيق مغلق
+5. التفاعل: النقر على الإشعار يفتح التطبيق/يركز النافذة الموجودة
+
+### الملفات المعنية
+- `sw.js` — Service Worker (Push + Offline + Cache)
+- `api/push-subscribe.php` — إدارة الاشتراكات
+- `api/generate-vapid.php` — توليد مفاتيح VAPID
+- `includes/functions.php` — `sendPushNotification()`, `sendWebPush()`, `encryptPushPayload()`
+- `admin/announcements.php` — إرسال Push عند إنشاء إعلان
+- `admin/settings.php` — إعداد مفاتيح VAPID
+
+## جداول قاعدة البيانات
+
+| الجدول | الوصف |
+|--------|-------|
+| `employees` | بيانات الموظفين |
+| `branches` | الفروع وإحداثياتها |
+| `attendances` | سجلات الحضور والانصراف |
+| `admins` | حسابات المشرفين |
+| `settings` | إعدادات النظام |
+| `push_subscriptions` | اشتراكات Web Push |
+| `notifications` | إشعارات النظام |
+| `employee_inbox` | صندوق وارد الموظف |
+| `announcements` | إعلانات الإدارة |
+| `branch_shifts` | نوبات عمل الفروع |
+| `leaves` | الإجازات |
+| `secret_reports` | البلاغات السرية |
+| `tampering_cases` | حالات التلاعب |
+| `known_devices` | الأجهزة المعروفة |
+| `audit_log` | سجل المراجعة |
 
 ## التثبيت السريع
 
 1. ارفع الملفات إلى الاستضافة
-2. عدّل `includes/config.php` ببيانات قاعدة البيانات
+2. أنشئ ملف `.env` ببيانات قاعدة البيانات:
+   ```
+   DB_HOST=localhost
+   DB_USER=username
+   DB_PASS=password
+   DB_NAME=dbname
+   ```
 3. افتح `install.php` لإنشاء الجداول
-4. ادخل من `/admin/login.php` — المستخدم: `admin` / كلمة المرور: `Admin@1234`
-5. غيّر كلمة المرور فوراً من الإعدادات
+4. شغّل الترحيلات: `php migrations/migrate_v12_push_subscriptions.php`
+5. ادخل من `/admin/login.php` — المستخدم: `admin` / كلمة المرور: `Admin@1234`
+6. غيّر كلمة المرور فوراً من الإعدادات
+7. ولّد مفاتيح VAPID من `الإعدادات → توليد مفاتيح VAPID`
 
-## التوثيق
+## سجل التغييرات
 
-التوثيق الكامل في مجلد [`docs/`](docs/README.md)
+### v5.0 — أبريل 2026
+- نظام إشعارات Push كامل (VAPID + AES-128-GCM)
+- Service Worker v9 مع Offline + Cache + Push
+- صندوق وارد الموظف مع إشعارات فورية
+- شريط أخبار متحرك (News Ticker)
+- صورة الملف الشخصي (رفع + تغيير)
+- واجهة محسّنة بتأثيرات Glass Morphism
+- تنبيهات اقتراب الوردية (Shift Alerts)
+- شريط تنقل سفلي (Bottom Navigation)
+- وضع البروفايل بعد تسجيل الدخول
+- migration v12: جداول push_subscriptions + notifications
 
-## الإصدار
-
-**v4.0** — أبريل 2026
+### v4.0 — مارس 2026
+- النسخة الأولى المستقرة
+- تسجيل حضور بالموقع الجغرافي
+- فروع متعددة ونوبات عمل
+- نظام البلاغات السرية
+- وضع مظلم كامل
 
 ## الرخصة
 

@@ -1,4 +1,5 @@
-<?php
+﻿<?php
+// ⛔ LEGACY — DO NOT EXTEND | All new code must go to src/* or api/v1/*
 // =============================================================
 // api/verify-device.php — التحقق من بصمة الجهاز وتسجيلها
 // وضع الربط:

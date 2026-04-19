@@ -1,0 +1,13 @@
+# API v1 URL Rewriting
+# Routes all /api/v1/* requests through index.php
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /api/v1/
+
+    # Skip existing files and directories
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+
+    # Route everything to index.php
+    RewriteRule ^(.*)$ index.php [QSA,L]
+</IfModule>

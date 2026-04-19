@@ -6,9 +6,13 @@ let currentLat = null;
 let currentLon = null;
 let currentAccuracy = null;
 let locationReady = false;
+let bestAccuracy = Infinity;
+let gpsWatchId = null;
+let gpsSamples = [];
 
 /**
  * تهيئة تحديد الموقع عند تحميل الصفحة
+ * يستخدم watchPosition مع اختيار أفضل قراءة (أقل accuracy = أدق)
  */
 function initLocation() {
     if (!navigator.geolocation) {
@@ -18,45 +22,83 @@ function initLocation() {
 
     setLocationStatus('getting', '🔍 جاري تحديد موقعك الجغرافي...');
 
-    navigator.geolocation.watchPosition(
-        function (position) {
-            currentLat      = position.coords.latitude;
-            currentLon      = position.coords.longitude;
-            currentAccuracy = position.coords.accuracy;
-            locationReady   = true;
+    // أولاً: قراءة سريعة مخزنة لعرض شيء فوراً
+    navigator.geolocation.getCurrentPosition(
+        function (pos) {
+            updateBestPosition(pos);
+        },
+        function () {},
+        { enableHighAccuracy: false, timeout: 3000, maximumAge: 60000 }
+    );
 
-            const accuracyText = currentAccuracy < 50 ? 'دقة عالية' :
-                                 currentAccuracy < 150 ? 'دقة متوسطة' : 'دقة منخفضة';
-            setLocationStatus('ready',
-                `📍 تم تحديد موقعك (${accuracyText}: ±${Math.round(currentAccuracy)} م)`
-            );
-            enableButtons();
+    // ثانياً: مراقبة مستمرة بدقة عالية
+    gpsWatchId = navigator.geolocation.watchPosition(
+        function (position) {
+            updateBestPosition(position);
         },
         function (error) {
-            let msg = '';
-            switch (error.code) {
-                case error.PERMISSION_DENIED:
-                    msg = '🚫 الرجاء السماح للمتصفح بالوصول إلى موقعك من إعدادات الهاتف';
-                    break;
-                case error.POSITION_UNAVAILABLE:
-                    msg = '📡 تعذّر تحديد موقعك. تأكد من تفعيل GPS';
-                    break;
-                case error.TIMEOUT:
-                    msg = '⏱️ انتهت مهلة تحديد الموقع. حاول مرة أخرى';
-                    break;
-                default:
-                    msg = '❌ خطأ في تحديد الموقع: ' + error.message;
+            // إذا لم يكن لدينا أي موقع بعد، عرض خطأ
+            if (!locationReady) {
+                let msg = '';
+                switch (error.code) {
+                    case error.PERMISSION_DENIED:
+                        msg = '🚫 الرجاء السماح للمتصفح بالوصول إلى موقعك من إعدادات الهاتف';
+                        break;
+                    case error.POSITION_UNAVAILABLE:
+                        msg = '📡 تعذّر تحديد موقعك. تأكد من تفعيل GPS';
+                        break;
+                    case error.TIMEOUT:
+                        msg = '⏱️ انتهت مهلة تحديد الموقع. حاول مرة أخرى';
+                        break;
+                    default:
+                        msg = '❌ خطأ في تحديد الموقع: ' + error.message;
+                }
+                setLocationStatus('error', msg);
             }
-            setLocationStatus('error', msg);
             // السماح بالضغط حتى مع عدم دقة الموقع
             enableButtons(true);
         },
         {
             enableHighAccuracy: true,
-            timeout: 15000,
-            maximumAge: 30000
+            timeout: 20000,
+            maximumAge: 0
         }
     );
+}
+
+/**
+ * تحديث الموقع فقط إذا كانت القراءة أدق أو حديثة بما يكفي
+ */
+function updateBestPosition(position) {
+    const acc = position.coords.accuracy;
+    const lat = position.coords.latitude;
+    const lon = position.coords.longitude;
+    const age = Date.now() - position.timestamp;
+
+    // حفظ العينة
+    gpsSamples.push({ lat, lon, acc, ts: Date.now() });
+    if (gpsSamples.length > 10) gpsSamples.shift();
+
+    // قبول القراءة إذا كانت أدق، أو إذا الحالية قديمة (> 15 ثانية)
+    const isMoreAccurate = acc < bestAccuracy;
+    const isFreshEnough = age < 5000;
+    const currentIsStale = currentLat && (Date.now() - (position.timestamp || Date.now())) > 15000;
+
+    if (isMoreAccurate || currentIsStale || !locationReady) {
+        currentLat = lat;
+        currentLon = lon;
+        currentAccuracy = acc;
+        bestAccuracy = Math.min(bestAccuracy, acc);
+        locationReady = true;
+
+        const accuracyText = acc < 30 ? 'دقة عالية جداً' :
+                             acc < 50 ? 'دقة عالية' :
+                             acc < 100 ? 'دقة متوسطة' : 'دقة منخفضة';
+        setLocationStatus('ready',
+            `📍 تم تحديد موقعك (${accuracyText}: ±${Math.round(acc)} م)`
+        );
+        enableButtons();
+    }
 }
 
 /**

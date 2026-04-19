@@ -76,6 +76,42 @@ body { font-family:"Tajawal",sans-serif; background:var(--surface2); color:var(-
 .nav-item.active .nav-icon,
 .nav-item:hover  .nav-icon { background:var(--primary); color:#fff; }
 
+/* ── Nav Groups (collapsible sidebar sections) ── */
+.nav-group { margin-bottom:2px; }
+.nav-group-toggle {
+    display:flex; align-items:center; gap:10px;
+    width:100%; padding:10px 14px;
+    background:none; border:none; cursor:pointer;
+    font-family:'Tajawal',sans-serif; font-size:.82rem; font-weight:700;
+    color:var(--text3); transition:all .2s; border-radius:10px;
+    -webkit-tap-highlight-color:transparent;
+}
+.nav-group-toggle:hover { color:var(--primary); background:var(--primary-xl); }
+.nav-group.open > .nav-group-toggle { color:var(--text1); }
+.nav-group-icon {
+    width:28px; height:28px; border-radius:8px;
+    display:flex; align-items:center; justify-content:center;
+    background:var(--surface3); flex-shrink:0;
+    transition:all .2s; color:var(--text3);
+}
+.nav-group.open > .nav-group-toggle .nav-group-icon { background:var(--primary); color:#fff; }
+.nav-group-title { flex:1; text-align:right; }
+.nav-group-arrow {
+    font-size:1.1rem; font-weight:400; color:var(--text3);
+    transition:transform .25s ease; line-height:1;
+    transform:rotate(0deg);
+}
+.nav-group.open > .nav-group-toggle .nav-group-arrow { transform:rotate(-90deg); }
+.nav-group-items {
+    max-height:0; overflow:hidden;
+    transition:max-height .3s ease, opacity .25s ease;
+    opacity:0; padding-right:8px;
+}
+.nav-group.open > .nav-group-items { max-height:600px; opacity:1; }
+.nav-group-items .nav-item { padding:8px 12px; font-size:.82rem; }
+.nav-group-items .nav-icon { width:30px; height:30px; border-radius:8px; }
+.nav-item-home { margin-bottom:6px; }
+
 .sidebar-footer { padding:14px 12px; border-top:1px solid var(--border); }
 .logout-btn {
     display:flex; align-items:center; gap:12px;

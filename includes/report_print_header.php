@@ -1,4 +1,5 @@
 <?php
+// ⛔ LEGACY — DO NOT EXTEND | All new code must go to src/* or api/v1/*
 /**
  * Premium Print Header for Reports
  * Include at the top of report content (after admin_layout.php)

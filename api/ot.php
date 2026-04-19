@@ -1,4 +1,5 @@
-<?php
+﻿<?php
+// ⛔ LEGACY — DO NOT EXTEND | All new code must go to src/* or api/v1/*
 // =============================================================
 // api/ot.php - API تسجيل الدوام الإضافي
 // (renamed from overtime.php to bypass CDN 404 cache - C3 fix)

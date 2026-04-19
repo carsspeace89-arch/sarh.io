@@ -77,6 +77,35 @@ abstract class Controller
     protected function validateCsrf(): bool
     {
         $token = $_POST['csrf_token'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
-        return verifyCsrfToken($token);
+        return \App\Middleware\CsrfProtection::verifyToken($token);
+    }
+
+    /**
+     * الحصول على جسم JSON المُرسل
+     */
+    protected function jsonBody(): array
+    {
+        $body = json_decode(file_get_contents('php://input'), true);
+        return is_array($body) ? $body : [];
+    }
+
+    /**
+     * إنشاء مُتحقق من البيانات
+     */
+    protected function validate(array $data): Validator
+    {
+        return Validator::make($data);
+    }
+
+    /**
+     * رد خطأ التحقق (422)
+     */
+    protected function validationError(Validator $validator): void
+    {
+        $this->json([
+            'success' => false,
+            'message' => $validator->firstError(),
+            'errors' => $validator->errors(),
+        ], 422);
     }
 }

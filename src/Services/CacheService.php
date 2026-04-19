@@ -36,14 +36,30 @@ class CacheService
         $file = $this->getPath($key);
         if (!file_exists($file)) return $default;
 
-        $data = @file_get_contents($file);
-        if ($data === false) return $default;
+        // Atomic read with shared lock to prevent race conditions
+        $fp = @fopen($file, 'r');
+        if ($fp === false) return $default;
 
-        $entry = @unserialize($data);
-        if ($entry === false) return $default;
+        if (!flock($fp, LOCK_SH)) {
+            fclose($fp);
+            return $default;
+        }
+
+        $data = stream_get_contents($fp);
+        flock($fp, LOCK_UN);
+        fclose($fp);
+
+        if ($data === false || $data === '') return $default;
+
+        $entry = @json_decode($data, true);
+        if (!is_array($entry) || !array_key_exists('value', $entry)) {
+            // Backward compatibility: try unserialize for old cache entries
+            $entry = @unserialize($data, ['allowed_classes' => false]);
+            if ($entry === false || !is_array($entry)) return $default;
+        }
 
         // هل انتهت الصلاحية؟
-        if ($entry['expires_at'] > 0 && $entry['expires_at'] < time()) {
+        if (($entry['expires_at'] ?? 0) > 0 && $entry['expires_at'] < time()) {
             @unlink($file);
             return $default;
         }
@@ -64,7 +80,7 @@ class CacheService
             'created_at' => time(),
         ];
 
-        return @file_put_contents($file, serialize($entry), LOCK_EX) !== false;
+        return @file_put_contents($file, json_encode($entry, JSON_UNESCAPED_UNICODE), LOCK_EX) !== false;
     }
 
     /**

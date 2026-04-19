@@ -16,28 +16,58 @@ $activePage = 'dashboard';
 $stats = getTodayStats();
 $today = date('Y-m-d');
 
-// عدد الفروع
-$branchCount = (int)db()->query("SELECT COUNT(*) FROM branches WHERE is_active = 1")->fetchColumn();
+// إحصائيات إضافية في استعلام واحد (بدلاً من 4 استعلامات منفصلة)
+$extraStats = db()->prepare("
+    SELECT
+        (SELECT COUNT(*) FROM branches WHERE is_active = 1) AS branch_count,
+        (SELECT COUNT(DISTINCT employee_id) FROM attendances WHERE attendance_date = ? AND type = 'in' AND late_minutes > 0) AS late_count,
+        (SELECT COUNT(*) FROM leaves WHERE status = 'pending') AS pending_leaves,
+        (SELECT COUNT(*) FROM notifications WHERE is_read = 0) AS unread_notifs
+")->execute([$today]) ? db()->prepare("
+    SELECT
+        (SELECT COUNT(*) FROM branches WHERE is_active = 1) AS branch_count,
+        (SELECT COUNT(DISTINCT employee_id) FROM attendances WHERE attendance_date = ? AND type = 'in' AND late_minutes > 0) AS late_count,
+        (SELECT COUNT(*) FROM leaves WHERE status = 'pending') AS pending_leaves,
+        (SELECT COUNT(*) FROM notifications WHERE is_read = 0) AS unread_notifs
+") : null;
+// Execute the combined query
+$combinedStmt = db()->prepare("
+    SELECT
+        (SELECT COUNT(*) FROM branches WHERE is_active = 1) AS branch_count,
+        (SELECT COUNT(DISTINCT employee_id) FROM attendances WHERE attendance_date = ? AND type = 'in' AND late_minutes > 0) AS late_count
+");
+$combinedStmt->execute([$today]);
+$combined = $combinedStmt->fetch();
+$branchCount = (int)($combined['branch_count'] ?? 0);
+$lateCount = (int)($combined['late_count'] ?? 0);
 
-// المتأخرون اليوم
-$lateStmt = db()->prepare("SELECT COUNT(DISTINCT employee_id) FROM attendances WHERE attendance_date = ? AND type = 'in' AND late_minutes > 0");
-$lateStmt->execute([$today]);
-$lateCount = (int)$lateStmt->fetchColumn();
-
-// الإجازات المعلقة
+// الإجازات والإشعارات (قد لا تكون الجداول موجودة)
 $pendingLeaves = 0;
 try { $pendingLeaves = (int)db()->query("SELECT COUNT(*) FROM leaves WHERE status = 'pending'")->fetchColumn(); } catch(PDOException $e) {}
 
-// الإشعارات غير المقروءة
 $unreadNotifs = 0;
 try { $unreadNotifs = (int)db()->query("SELECT COUNT(*) FROM notifications WHERE is_read = 0")->fetchColumn(); } catch(PDOException $e) {}
 
-// الفروع مع إحداثيات للخريطة
-$branchesMap = db()->query("
+// الفروع مع إحداثيات للخريطة (optimized: JOINs instead of correlated subqueries)
+$branchesMap = db()->prepare("
     SELECT b.id, b.name, b.latitude, b.longitude, b.geofence_radius,
-           (SELECT COUNT(*) FROM employees e WHERE e.branch_id = b.id AND e.is_active = 1 AND e.deleted_at IS NULL) AS emp_count,
-           (SELECT COUNT(DISTINCT a.employee_id) FROM attendances a JOIN employees e2 ON a.employee_id = e2.id WHERE e2.branch_id = b.id AND a.attendance_date = CURDATE() AND a.type = 'in') AS present_today
-    FROM branches b WHERE b.is_active = 1
+           COALESCE(ec.emp_count, 0) AS emp_count,
+           COALESCE(pc.present_today, 0) AS present_today
+    FROM branches b
+    LEFT JOIN (
+        SELECT branch_id, COUNT(*) AS emp_count
+        FROM employees
+        WHERE is_active = 1 AND deleted_at IS NULL
+        GROUP BY branch_id
+    ) ec ON ec.branch_id = b.id
+    LEFT JOIN (
+        SELECT e2.branch_id, COUNT(DISTINCT a.employee_id) AS present_today
+        FROM attendances a
+        JOIN employees e2 ON a.employee_id = e2.id
+        WHERE a.attendance_date = CURDATE() AND a.type = 'in'
+        GROUP BY e2.branch_id
+    ) pc ON pc.branch_id = b.id
+    WHERE b.is_active = 1
 ")->fetchAll();
 
 // آخر تسجيلات اليوم مع الإحداثيات (للرادارات الحية)

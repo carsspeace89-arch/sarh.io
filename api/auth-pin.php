@@ -1,4 +1,5 @@
-<?php
+﻿<?php
+// ⛔ LEGACY — DO NOT EXTEND | All new code must go to src/* or api/v1/*
 // =============================================================
 // api/auth-pin.php — مصادقة الموظف عبر PIN
 // =============================================================
@@ -7,38 +8,45 @@ require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/rate_limiter.php';
 
-header('Content-Type: application/json; charset=utf-8');
-header('Access-Control-Allow-Origin: ' . SITE_URL);
-header('Access-Control-Allow-Methods: POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
+setupApiHeaders(['POST', 'OPTIONS']);
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(204);
     exit;
 }
 
-// Rate Limiting: 10 طلب/دقيقة لكل IP (أقل لأن هذا مصادقة)
-if (isRateLimited(10, 60, 'auth_pin')) { rateLimitResponse(); }
+if (!validateApiOrigin()) {
+    apiError('Origin غير مسموح', 403);
+}
+
+// Rate Limiting: Redis-first, file-based fallback (stricter for auth)
+if (class_exists('\App\Middleware\RedisRateLimiter')) {
+    $rl = new \App\Middleware\RedisRateLimiter();
+    $check = $rl->checkByIP('auth_pin', 10, 60);
+    if (!$check['allowed']) { $rl->denyResponse($check['retry_after']); }
+} elseif (isRateLimited(10, 60, 'auth_pin')) {
+    rateLimitResponse();
+}
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    jsonResponse(['success' => false, 'message' => 'طريقة طلب غير مسموحة'], 405);
+    apiError('طريقة طلب غير مسموحة', 405);
 }
 
 $body = json_decode(file_get_contents('php://input'), true);
 if (!$body) {
-    jsonResponse(['success' => false, 'message' => 'بيانات غير صالحة'], 400);
+    apiError('بيانات غير صالحة', 400);
 }
 
 $pin = trim($body['pin'] ?? '');
 $fingerprint = trim($body['fingerprint'] ?? '');
 
 if (empty($pin) || !preg_match('/^\d{4}$/', $pin)) {
-    jsonResponse(['success' => false, 'message' => 'أدخل رقم PIN صحيح من 4 أرقام'], 400);
+    apiError('أدخل رقم PIN صحيح من 4 أرقام', 400);
 }
 
 $employee = getEmployeeByPin($pin);
 if (!$employee) {
-    jsonResponse(['success' => false, 'message' => 'رقم PIN غير صحيح أو الموظف غير مفعّل'], 403);
+    apiError('رقم PIN غير صحيح أو الموظف غير مفعّل', 403);
 }
 
 // ── إذا تم إرسال بصمة الجهاز: تحقق من الربط ──
@@ -59,7 +67,7 @@ if (!empty($fingerprint) && strlen($fingerprint) >= 32) {
 
     if ($boundEmployee) {
         // الجهاز مربوط بموظف آخر ← أعد توجيهه للموظف الصحيح
-        jsonResponse([
+        apiSuccess([
             'success'        => true,
             'redirected'     => true,
             'token'          => $boundEmployee['unique_token'],
@@ -71,7 +79,7 @@ if (!empty($fingerprint) && strlen($fingerprint) >= 32) {
     }
 }
 
-jsonResponse([
+apiSuccess([
     'success'        => true,
     'token'          => $employee['unique_token'],
     'employee_name'  => $employee['name'],

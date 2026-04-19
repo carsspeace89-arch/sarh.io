@@ -101,10 +101,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $countStr = count($recipients) > 1 ? count($recipients) . ' موظفين' : 'موظف واحد';
             auditLog('inbox_send', "إرسال {$typeLabel} لـ {$countStr}: {$title}");
 
+            // إرسال إشعار Push للموظفين
+            $typeIcons = ['violation'=>'🚫','deduction'=>'💸','reward'=>'🏆','warning'=>'⚠️','info'=>'ℹ️'];
+            $pushIcon = $typeIcons[$msgType] ?? 'ℹ️';
+            $pushResult = sendPushNotification($recipients, $pushIcon . ' ' . $title, $body, [
+                'tag' => 'inbox-' . $msgType . '-' . time(),
+                'url' => '/employee/my-inbox.php'
+            ]);
+
             echo json_encode([
                 'success'   => true,
-                'message'   => "تم إرسال الرسالة بنجاح إلى {$countStr}",
+                'message'   => "تم إرسال الرسالة بنجاح إلى {$countStr}" . ($pushResult['sent'] > 0 ? " (+ {$pushResult['sent']} إشعار push)" : ''),
                 'sent_to'   => count($recipients),
+                'push_sent' => $pushResult['sent'] ?? 0,
             ]);
         } catch (Exception $e) {
             db()->rollBack();

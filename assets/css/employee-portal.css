@@ -1,0 +1,203 @@
+/* =============================================================
+   employee-portal.css — بوابة الموظف (صفحة PIN)
+   Enhanced design for the PIN entry gateway
+   ============================================================= */
+
+/* ── Background & Ambient ── */
+.gateway {
+  background: linear-gradient(160deg, #FFF7ED 0%, #F8FAFC 40%, #EFF6FF 100%);
+  position: relative;
+  overflow: hidden;
+}
+.gateway::before {
+  content: '';
+  position: absolute;
+  top: -30%;
+  right: -20%;
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(249,115,22,.08) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+.gateway::after {
+  content: '';
+  position: absolute;
+  bottom: -20%;
+  left: -15%;
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(59,130,246,.06) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* ── Card Enhancements ── */
+.gateway-card {
+  position: relative;
+  z-index: 1;
+  border: 1px solid rgba(0,0,0,.04);
+  animation: cardEntry .5s cubic-bezier(.34,1.3,.64,1) both;
+}
+@keyframes cardEntry {
+  from { opacity: 0; transform: translateY(24px) scale(.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ── Logo Enhancements ── */
+.gateway-logo {
+  border: 2px solid rgba(249,115,22,.12);
+  box-shadow: 0 4px 16px rgba(249,115,22,.08);
+  transition: transform .3s ease;
+}
+.gateway-logo:hover {
+  transform: scale(1.05);
+}
+
+/* ── Title & Subtitle ── */
+.gateway-title {
+  background: linear-gradient(135deg, #1E293B, #334155);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.gateway-sub {
+  line-height: 1.6;
+}
+
+/* ── PIN Input Enhancements ── */
+.pin-inputs input {
+  box-shadow: 0 2px 8px rgba(0,0,0,.03);
+  transition: all .25s cubic-bezier(.34,1.3,.64,1);
+}
+.pin-inputs input:focus {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(249,115,22,.12), 0 0 0 3px rgba(249,115,22,.1);
+}
+.pin-inputs input.filled {
+  border-color: #CBD5E1;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,.04);
+}
+
+/* ── Button Enhancements ── */
+.pin-btn {
+  box-shadow: 0 4px 16px rgba(249,115,22,.25), 0 2px 4px rgba(0,0,0,.06);
+  position: relative;
+  overflow: hidden;
+}
+.pin-btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255,255,255,.15) 0%, transparent 50%);
+  pointer-events: none;
+  border-radius: inherit;
+}
+.pin-btn:not(:disabled):hover {
+  box-shadow: 0 6px 24px rgba(249,115,22,.35), 0 2px 8px rgba(0,0,0,.08);
+}
+.pin-btn:not(:disabled):active {
+  box-shadow: 0 2px 8px rgba(249,115,22,.2);
+}
+
+/* ── Auto-login Enhancements ── */
+.auto-login {
+  animation: fadeInUp .4s ease both;
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.auto-login-name {
+  background: linear-gradient(135deg, #F97316, #EA580C);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Switch User ── */
+.switch-user {
+  transition: all .2s;
+  padding: 6px 12px;
+  border-radius: 8px;
+}
+.switch-user:hover {
+  background: rgba(249,115,22,.06);
+}
+
+/* ── Footer ── */
+.gateway-footer {
+  padding-top: 8px;
+  border-top: 1px solid rgba(0,0,0,.04);
+  margin-top: 24px;
+}
+
+/* ── Error State ── */
+.pin-error:not(:empty) {
+  animation: errorFade .3s ease;
+  padding: 8px 12px;
+  background: rgba(239,68,68,.06);
+  border-radius: 8px;
+  border: 1px solid rgba(239,68,68,.1);
+}
+@keyframes errorFade {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Responsive ── */
+@media (max-width: 380px) {
+  .gateway { padding: 12px; }
+  .gateway-card { padding: 28px 18px; border-radius: 16px; }
+  .gateway-logo { width: 60px; height: 60px; border-radius: 14px; }
+  .gateway-logo img { width: 44px; height: 44px; }
+  .gateway-title { font-size: 1.15rem; }
+  .gateway-sub { font-size: .8rem; margin-bottom: 22px; }
+  .pin-inputs { gap: 8px; }
+  .pin-inputs input { width: 48px; height: 56px; font-size: 1.5rem; border-radius: 10px; }
+  .pin-btn { padding: 12px; font-size: .95rem; border-radius: 10px; }
+}
+
+@media (max-height: 600px) {
+  .gateway { padding: 10px; }
+  .gateway-card { padding: 24px 16px; }
+  .gateway-logo { width: 56px; height: 56px; margin-bottom: 10px; }
+  .gateway-sub { margin-bottom: 18px; }
+}
+
+/* ── Dark mode support ── */
+@media (prefers-color-scheme: dark) {
+  .gateway {
+    background: linear-gradient(160deg, #1C1917 0%, #0F172A 40%, #1E1B4B 100%);
+  }
+  .gateway-card {
+    background: #1E293B;
+    border-color: rgba(255,255,255,.06);
+    box-shadow: 0 8px 32px rgba(0,0,0,.3);
+  }
+  .gateway-title {
+    background: linear-gradient(135deg, #F8FAFC, #CBD5E1);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .gateway-sub { color: #94A3B8; }
+  .gateway-logo { background: #1E293B; border-color: rgba(249,115,22,.2); }
+  .pin-inputs input {
+    background: #0F172A;
+    border-color: #334155;
+    color: #F1F5F9;
+  }
+  .pin-inputs input:focus {
+    border-color: #F97316;
+    background: #1E293B;
+  }
+  .pin-inputs input.error { background: rgba(239,68,68,.1); border-color: #EF4444; }
+  .pin-inputs input.success { background: rgba(34,197,94,.1); border-color: #22C55E; }
+  .pin-error:not(:empty) { background: rgba(239,68,68,.1); border-color: rgba(239,68,68,.2); }
+  .gateway-footer { color: #64748B; border-top-color: rgba(255,255,255,.06); }
+  .switch-user { color: #94A3B8; }
+  .switch-user:hover { color: #F97316; background: rgba(249,115,22,.1); }
+  .auto-login-msg { color: #94A3B8; }
+}

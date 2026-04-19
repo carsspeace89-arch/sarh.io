@@ -76,21 +76,16 @@ class NotificationService
     public function getUnread(int $limit = 20): array
     {
         $db = Database::getInstance();
-        return $db->prepare("
+        $stmt = $db->prepare("
             SELECT n.*, e.name AS employee_name
             FROM notifications n
             LEFT JOIN employees e ON n.employee_id = e.id
             WHERE n.is_read = 0 AND n.admin_id IS NULL
             ORDER BY n.created_at DESC
             LIMIT ?
-        ")->execute([$limit]) ? $db->prepare("
-            SELECT n.*, e.name AS employee_name
-            FROM notifications n
-            LEFT JOIN employees e ON n.employee_id = e.id
-            WHERE n.is_read = 0 AND n.admin_id IS NULL
-            ORDER BY n.created_at DESC
-            LIMIT {$limit}
-        ")->fetchAll() : [];
+        ");
+        $stmt->execute([$limit]);
+        return $stmt->fetchAll();
     }
 
     /**

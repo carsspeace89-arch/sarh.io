@@ -6,14 +6,17 @@
 namespace App\Services;
 
 use App\Models\Admin;
+use App\Models\LoginAttempt;
 
 class AuthService
 {
     private Admin $admin;
+    private LoginAttempt $loginAttempt;
 
     public function __construct()
     {
         $this->admin = new Admin();
+        $this->loginAttempt = new LoginAttempt();
     }
 
     /**
@@ -111,19 +114,8 @@ class AuthService
      */
     public function checkLoginAttempts(string $ip, int $maxAttempts = 5, int $windowMinutes = 10): bool
     {
-        $db = \App\Core\Database::getInstance();
-
-        // تنظيف المحاولات القديمة
-        $db->prepare(
-            "DELETE FROM login_attempts WHERE attempted_at < DATE_SUB(NOW(), INTERVAL ? MINUTE)"
-        )->execute([$windowMinutes]);
-
-        $stmt = $db->prepare(
-            "SELECT COUNT(*) FROM login_attempts WHERE ip_address = ? AND attempted_at > DATE_SUB(NOW(), INTERVAL ? MINUTE)"
-        );
-        $stmt->execute([$ip, $windowMinutes]);
-        $count = (int)$stmt->fetchColumn();
-
+        $this->loginAttempt->cleanup($windowMinutes);
+        $count = $this->loginAttempt->countByIp($ip, $windowMinutes);
         return $count < $maxAttempts;
     }
 
@@ -132,10 +124,7 @@ class AuthService
      */
     public function recordFailedAttempt(string $ip, string $username): void
     {
-        $db = \App\Core\Database::getInstance();
-        $db->prepare(
-            "INSERT INTO login_attempts (ip_address, username, attempted_at) VALUES (?, ?, NOW())"
-        )->execute([$ip, $username]);
+        $this->loginAttempt->recordFailed($ip, $username);
     }
 
     /**

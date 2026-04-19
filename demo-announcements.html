@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>عرض توضيحي - نظام الإعلانات</title>
+    <link rel="stylesheet" href="https://sarh.io/assets/fonts/tajawal.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Tajawal', sans-serif;
+            background: #F1F5F9;
+            padding: 20px;
+            direction: rtl;
+        }
+        .demo-badge {
+            background: linear-gradient(135deg, #F59E0B, #EA580C);
+            color: #fff;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, var(--stat-color, #3B82F6), var(--stat-color-dark, #2563EB));
+            color: #fff;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 800;
+            margin-bottom: 4px;
+        }
+        .stat-label {
+            font-size: 0.85rem;
+            opacity: 0.9;
+        }
+        .card {
+            background: #fff;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+        }
+        .card-header {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #1E293B;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #F1F5F9;
+        }
+        .announcement-card {
+            border: 1px solid #E2E8F0;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 14px;
+            background: #fff;
+            transition: all 0.2s;
+            border-left: 4px solid;
+        }
+        .announcement-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            transform: translateY(-2px);
+        }
+        .announcement-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+        .announcement-icon {
+            font-size: 1.8rem;
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 10px;
+            background: linear-gradient(135deg, rgba(255,255,255,0.1), rgba(255,255,255,0.3));
+            flex-shrink: 0;
+        }
+        .announcement-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .announcement-title {
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: #1E293B;
+            margin-bottom: 4px;
+        }
+        .announcement-meta {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            font-size: 0.77rem;
+            color: #64748B;
+        }
+        .announcement-content {
+            font-size: 0.88rem;
+            color: #64748B;
+            line-height: 1.6;
+            margin: 12px 0;
+            padding: 10px;
+            background: #F8FAFC;
+            border-radius: 8px;
+        }
+        .badge-pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+        .badge-urgent { background: #FEE2E2; color: #DC2626; }
+        .badge-high { background: #FED7AA; color: #EA580C; }
+        .badge-normal { background: #DBEAFE; color: #2563EB; }
+        .badge-active { background: #D1FAE5; color: #059669; }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: 'Tajawal', sans-serif;
+        }
+        .btn-primary {
+            background: #F97316;
+            color: #fff;
+        }
+        .btn-primary:hover {
+            background: #EA580C;
+        }
+        .login-link {
+            display: inline-block;
+            margin-top: 10px;
+            color: #F97316;
+            text-decoration: none;
+            font-weight: 600;
+        }
+        .login-link:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+
+<div class="demo-badge">
+    <h1 style="margin-bottom: 8px;">🎨 عرض توضيحي - نظام الإعلانات</h1>
+    <p>هذه واجهة توضيحية للنظام. للوصول الكامل، يرجى <a href="https://sarh.io/admin/login.php" class="login-link" style="color: #fff; text-decoration: underline;">تسجيل الدخول</a></p>
+</div>
+
+<!-- إحصائيات -->
+<div class="stats-grid">
+    <div class="stat-card" style="--stat-color:#10B981;--stat-color-dark:#059669">
+        <div class="stat-value">4</div>
+        <div class="stat-label">📢 إعلانات نشطة</div>
+    </div>
+    <div class="stat-card" style="--stat-color:#EF4444;--stat-color-dark:#DC2626">
+        <div class="stat-value">1</div>
+        <div class="stat-label">🚨 إعلانات عاجلة</div>
+    </div>
+    <div class="stat-card" style="--stat-color:#3B82F6;--stat-color-dark:#2563EB">
+        <div class="stat-value">4</div>
+        <div class="stat-label">📊 إجمالي الإعلانات</div>
+    </div>
+</div>
+
+<!-- قائمة الإعلانات -->
+<div class="card">
+    <div class="card-header">📋 قائمة الإعلانات (4)</div>
+    
+    <!-- إعلان 1 -->
+    <div class="announcement-card" style="border-left-color:#EF4444">
+        <div class="announcement-header">
+            <div class="announcement-icon" style="background:#EF444420">🎉</div>
+            <div class="announcement-info">
+                <div class="announcement-title">عطلة رسمية</div>
+                <div class="announcement-meta">
+                    <span class="badge-pill badge-urgent">🚨 عاجل</span>
+                    <span class="badge-pill badge-active">✅ نشط</span>
+                    <span class="badge-pill" style="background:#F0F9FF;color:#0EA5E9">📰 في الشريط</span>
+                </div>
+            </div>
+        </div>
+        <div class="announcement-content">
+            يوم الخميس القادم عطلة رسمية بمناسبة اليوم الوطني
+        </div>
+    </div>
+
+    <!-- إعلان 2 -->
+    <div class="announcement-card" style="border-left-color:#F97316">
+        <div class="announcement-header">
+            <div class="announcement-icon" style="background:#F9731620">⏰</div>
+            <div class="announcement-info">
+                <div class="announcement-title">مواعيد العمل الجديدة</div>
+                <div class="announcement-meta">
+                    <span class="badge-pill badge-high">⚠️ مرتفع</span>
+                    <span class="badge-pill badge-active">✅ نشط</span>
+                    <span class="badge-pill" style="background:#F0F9FF;color:#0EA5E9">📰 في الشريط</span>
+                </div>
+            </div>
+        </div>
+        <div class="announcement-content">
+            تم تحديث مواعيد العمل لتكون من الساعة 8 صباحاً حتى 4 مساءً
+        </div>
+    </div>
+
+    <!-- إعلان 3 -->
+    <div class="announcement-card" style="border-left-color:#EAB308">
+        <div class="announcement-header">
+            <div class="announcement-icon" style="background:#EAB30820">🔧</div>
+            <div class="announcement-info">
+                <div class="announcement-title">صيانة النظام</div>
+                <div class="announcement-meta">
+                    <span class="badge-pill badge-high">⚠️ مرتفع</span>
+                    <span class="badge-pill badge-active">✅ نشط</span>
+                    <span class="badge-pill" style="background:#F0F9FF;color:#0EA5E9">📰 في الشريط</span>
+                </div>
+            </div>
+        </div>
+        <div class="announcement-content">
+            سيتم إجراء صيانة للنظام يوم السبت من 12-2 ظهراً
+        </div>
+    </div>
+
+    <!-- إعلان 4 -->
+    <div class="announcement-card" style="border-left-color:#3B82F6">
+        <div class="announcement-header">
+            <div class="announcement-icon" style="background:#3B82F620">📚</div>
+            <div class="announcement-info">
+                <div class="announcement-title">تدريب إلزامي</div>
+                <div class="announcement-meta">
+                    <span class="badge-pill badge-normal">ℹ️ عادي</span>
+                    <span class="badge-pill badge-active">✅ نشط</span>
+                    <span class="badge-pill" style="background:#F0F9FF;color:#0EA5E9">📰 في الشريط</span>
+                </div>
+            </div>
+        </div>
+        <div class="announcement-content">
+            دورة تدريبية للسلامة المهنية يوم الأحد في الساعة 10 صباحاً
+        </div>
+    </div>
+</div>
+
+<div class="card" style="text-align: center; background: linear-gradient(135deg, #F0F9FF, #E0F2FE);">
+    <h3 style="margin-bottom: 10px; color: #1E293B;">🔒 للوصول الكامل</h3>
+    <p style="margin-bottom: 15px; color: #64748B;">قم بتسجيل الدخول للحصول على صلاحيات الإدارة الكاملة</p>
+    <a href="https://sarh.io/admin/login.php" class="btn btn-primary">تسجيل الدخول</a>
+</div>
+
+</body>
+</html>

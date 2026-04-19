@@ -164,7 +164,7 @@ L.Icon.Default.mergeOptions({
 </style>
 
 <?php if ($message): ?>
-    <div class="alert alert-<?= $msgType === 'success' ? 'success' : 'error' ?>"><?= $message ?></div>
+    <div class="alert alert-<?= $msgType === 'success' ? 'success' : 'error' ?>"><?= htmlspecialchars($message, ENT_QUOTES, 'UTF-8') ?></div>
 <?php endif; ?>
 
 <div class="card-header" style="margin-bottom:18px">

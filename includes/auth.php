@@ -1,4 +1,5 @@
 <?php
+// ⛔ LEGACY — DO NOT EXTEND | All new code must go to src/* or api/v1/*
 // =============================================================
 // includes/auth.php - مصادقة المديرين
 // =============================================================
@@ -25,11 +26,14 @@ function adminLogin(string $username, string $password): array {
     $admin = $stmt->fetch();
 
     // دائماً نستدعي password_verify لمنع Timing Attacks (حتى لو المستخدم غير موجود)
-    $dummyHash = '$2y$10$dummyhashtopreventtimingattacksXXXXXXXXXXXXXXXXXXXXXXX';
-    $hashToCheck = $admin ? $admin['password_hash'] : $dummyHash;
-    $passwordValid = password_verify($password, $hashToCheck);
+    if (!$admin) {
+        // Generate a real hash to consume constant time
+        password_verify($password, password_hash(bin2hex(random_bytes(8)), PASSWORD_DEFAULT));
+        return ['success' => false, 'message' => 'اسم المستخدم أو كلمة المرور غير صحيحة'];
+    }
+    $passwordValid = password_verify($password, $admin['password_hash']);
 
-    if (!$admin || !$passwordValid) {
+    if (!$passwordValid) {
         return ['success' => false, 'message' => 'اسم المستخدم أو كلمة المرور غير صحيحة'];
     }
 

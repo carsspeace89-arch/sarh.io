@@ -380,6 +380,12 @@ html.dark .nav-item.active {
 html.dark .nav-label {
     color: rgba(201,168,76,.6) !important;
 }
+html.dark .nav-group-toggle { color: rgba(255,255,255,.5) !important; }
+html.dark .nav-group-toggle:hover { color: #C9A84C !important; background: rgba(201,168,76,.08) !important; }
+html.dark .nav-group.open > .nav-group-toggle { color: rgba(255,255,255,.85) !important; }
+html.dark .nav-group-icon { background: rgba(255,255,255,.06) !important; color: rgba(255,255,255,.4) !important; }
+html.dark .nav-group.open > .nav-group-toggle .nav-group-icon { background: #C9A84C !important; color: #1E293B !important; }
+html.dark .nav-group-arrow { color: rgba(255,255,255,.3) !important; }
 
 /* Topbar dark */
 html.dark .topbar {

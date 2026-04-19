@@ -1,6 +1,10 @@
 <?php
 // =============================================================
-// src/Services/AttendanceService.php - خدمة الحضور والانصراف
+// src/Services/AttendanceService.php - Attendance Service (Refactored)
+// =============================================================
+// Centralized attendance business logic. Uses ShiftService for
+// shift detection and GeofenceService for location validation.
+// Controllers MUST call this service; no direct DB access.
 // =============================================================
 
 namespace App\Services;
@@ -8,22 +12,30 @@ namespace App\Services;
 use App\Models\Attendance;
 use App\Models\Employee;
 use App\Models\Branch;
+use App\Core\Database;
+use App\Core\Logger;
 
 class AttendanceService
 {
     private Attendance $attendance;
     private Employee $employee;
     private Branch $branch;
+    private ShiftService $shiftService;
+    private GeofenceService $geofenceService;
 
-    public function __construct()
-    {
+    public function __construct(
+        ?ShiftService $shiftService = null,
+        ?GeofenceService $geofenceService = null
+    ) {
         $this->attendance = new Attendance();
         $this->employee = new Employee();
         $this->branch = new Branch();
+        $this->shiftService = $shiftService ?? new ShiftService();
+        $this->geofenceService = $geofenceService ?? new GeofenceService();
     }
 
     /**
-     * تسجيل حضور أو انصراف
+     * Record check-in or check-out with full validation
      */
     public function record(int $employeeId, string $type, float $lat, float $lon, float $accuracy = 0): array
     {
@@ -32,19 +44,70 @@ class AttendanceService
             return ['success' => false, 'message' => 'نوع تسجيل غير صالح'];
         }
 
-        // التحقق من التكرار
+        // Duplicate prevention
         if ($this->attendance->hasRecentRecord($employeeId, $type, 5)) {
             return ['success' => false, 'message' => 'تم التسجيل مسبقاً خلال آخر 5 دقائق'];
         }
 
-        // حساب التأخير
-        $lateMinutes = 0;
-        if ($type === 'in') {
-            $lateMinutes = $this->calculateLateMinutes($employeeId);
+        $emp = $this->employee->find($employeeId);
+        if (!$emp) {
+            return ['success' => false, 'message' => 'الموظف غير موجود'];
         }
 
+        $branchId = $emp['branch_id'] ?? null;
         $ip = $this->getClientIP();
         $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
+
+        // Calculate late/early minutes via ShiftService
+        $lateMinutes = 0;
+        $earlyMinutes = 0;
+        if ($type === 'in') {
+            $lateMinutes = $this->shiftService->calculateLateMinutes($employeeId, $branchId);
+            $earlyMinutes = $this->shiftService->calculateEarlyMinutes($branchId);
+        }
+
+        // Determine shift
+        $schedule = $this->shiftService->getBranchSchedule($branchId);
+        $shifts = $schedule['shifts'] ?? [];
+        $shiftId = null;
+        if (!empty($shifts)) {
+            $nowTime = date('H:i');
+            $shiftNum = $this->shiftService->assignTimeToShift($nowTime, $shifts);
+            foreach ($shifts as $s) {
+                if ((int)$s['shift_number'] === $shiftNum) {
+                    if (isset($s['id'])) {
+                        $shiftId = (int)$s['id'];
+                    } elseif ($branchId) {
+                        $db = Database::getInstance();
+                        $stmt = $db->prepare("SELECT id FROM branch_shifts WHERE branch_id = ? AND shift_number = ? AND is_active = 1 LIMIT 1");
+                        $stmt->execute([$branchId, $shiftNum]);
+                        $row = $stmt->fetch();
+                        if ($row) $shiftId = (int)$row['id'];
+                    }
+                    break;
+                }
+            }
+        }
+
+        // Link checkout to last checkin
+        $closedByCheckinId = null;
+        if ($type === 'out') {
+            $db = Database::getInstance();
+            $stmt = $db->prepare("
+                SELECT id FROM attendances
+                WHERE employee_id = ? AND type = 'in' AND attendance_date = CURDATE()
+                ORDER BY timestamp DESC LIMIT 1
+            ");
+            $stmt->execute([$employeeId]);
+            $ciRow = $stmt->fetch();
+            if ($ciRow) $closedByCheckinId = (int)$ciRow['id'];
+        }
+
+        // Perform risk-scored geofence validation
+        $riskResult = $this->geofenceService->validateWithRiskScore(
+            $employeeId, $lat, $lon, $branchId, $ip,
+            $_SERVER['HTTP_USER_AGENT'] ?? null, $accuracy
+        );
 
         $id = $this->attendance->create([
             'employee_id' => $employeeId,
@@ -52,11 +115,15 @@ class AttendanceService
             'timestamp' => date('Y-m-d H:i:s'),
             'attendance_date' => date('Y-m-d'),
             'late_minutes' => $lateMinutes,
+            'early_minutes' => $earlyMinutes,
             'latitude' => $lat,
             'longitude' => $lon,
             'location_accuracy' => $accuracy,
             'ip_address' => $ip,
             'user_agent' => $userAgent,
+            'status' => 'manual',
+            'shift_id' => $shiftId,
+            'closed_by_checkin_id' => $closedByCheckinId,
         ]);
 
         $messages = [
@@ -64,82 +131,80 @@ class AttendanceService
             'out' => 'تم تسجيل الانصراف بنجاح',
         ];
 
+        Logger::info('Attendance recorded', [
+            'employee_id' => $employeeId,
+            'type' => $type,
+            'late_minutes' => $lateMinutes,
+            'risk_score' => $riskResult['risk_score'] ?? 0,
+            'shift_id' => $shiftId,
+        ]);
+
         return [
             'success' => true,
             'message' => $messages[$type] ?? 'تم التسجيل',
             'late_minutes' => $lateMinutes,
+            'early_minutes' => $earlyMinutes,
             'record_id' => $id,
+            'risk_score' => $riskResult['risk_score'] ?? 0,
+            'risk_level' => $riskResult['risk_level'] ?? 'low',
         ];
     }
 
     /**
-     * حساب دقائق التأخير
-     */
-    private function calculateLateMinutes(int $employeeId): int
-    {
-        $emp = $this->employee->find($employeeId);
-        if (!$emp) return 0;
-
-        $schedule = getBranchSchedule($emp['branch_id'] ?? null);
-        $now = time();
-
-        // تحديد مرجع حساب التأخير: إذا توجد استراحة والوقت الحالي بعد نهاية الاستراحة
-        $referenceTimeStr = $schedule['work_start_time'];
-        if (!empty($schedule['break_start']) && !empty($schedule['break_end'])) {
-            $breakStart = strtotime(date('Y-m-d') . ' ' . $schedule['break_start']);
-            if ($now >= $breakStart) {
-                $referenceTimeStr = $schedule['break_end'];
-            }
-        }
-
-        $workStart = strtotime(date('Y-m-d') . ' ' . $referenceTimeStr);
-
-        // عبور منتصف الليل
-        if ($workStart > $now + 43200) {
-            $workStart = strtotime(date('Y-m-d', strtotime('-1 day')) . ' ' . $referenceTimeStr);
-        }
-
-        if ($now > $workStart) {
-            return max(0, (int)round(($now - $workStart) / 60));
-        }
-
-        return 0;
-    }
-
-    /**
-     * التحقق من الموقع الجغرافي
+     * Validate geofence (delegates to GeofenceService)
      */
     public function validateGeofence(float $empLat, float $empLon, ?int $branchId = null): array
     {
-        return isWithinGeofence($empLat, $empLon, $branchId);
+        return $this->geofenceService->isWithinGeofence($empLat, $empLon, $branchId);
     }
 
     /**
-     * التحقق من نافذة الوقت
+     * Full risk-scored geofence validation
+     */
+    public function validateGeofenceWithRisk(
+        int $employeeId,
+        float $lat,
+        float $lon,
+        ?int $branchId,
+        string $ip,
+        ?string $deviceFingerprint = null,
+        float $accuracy = 0
+    ): array {
+        return $this->geofenceService->validateWithRiskScore(
+            $employeeId, $lat, $lon, $branchId, $ip, $deviceFingerprint, $accuracy
+        );
+    }
+
+    /**
+     * Check time window via ShiftService
      */
     public function isWithinTimeWindow(string $type, ?int $branchId = null): array
     {
-        $schedule = getBranchSchedule($branchId);
+        $schedule = $this->shiftService->getBranchSchedule($branchId);
+        $nowMin = (int)date('H') * 60 + (int)date('i');
 
         if ($type === 'in') {
-            $start = $schedule['check_in_start_time'];
-            $end = $schedule['check_in_end_time'];
+            $startStr = $schedule['work_start_time'];
+            $startMin = $this->shiftService->timeToMinutes($startStr);
+            // Allow 90 min early
+            $windowStart = ($startMin - 90 + 1440) % 1440;
+            $endStr = $schedule['work_end_time'];
+            $windowEnd = $this->shiftService->timeToMinutes($endStr);
         } elseif ($type === 'out') {
-            $start = $schedule['check_out_start_time'];
-            $end = $schedule['check_out_end_time'];
+            $startStr = $schedule['work_start_time'];
+            $windowStart = $this->shiftService->timeToMinutes($startStr);
+            $endStr = $schedule['work_end_time'];
+            $endMin = $this->shiftService->timeToMinutes($endStr);
+            // Allow 90 min after end
+            $windowEnd = ($endMin + 90) % 1440;
         } else {
             return ['allowed' => true, 'message' => 'مسموح'];
         }
 
-        $nowMin = (int)date('H') * 60 + (int)date('i');
-        $startMin = $this->timeToMinutes($start);
-        $endMin = $this->timeToMinutes($end);
-
-        // عبور منتصف الليل
-        if ($endMin < $startMin) {
-            $allowed = ($nowMin >= $startMin || $nowMin <= $endMin);
+        if ($windowEnd < $windowStart) {
+            $allowed = ($nowMin >= $windowStart || $nowMin <= $windowEnd);
         } else {
-            $allowed = ($nowMin >= $startMin && $nowMin <= $endMin);
+            $allowed = ($nowMin >= $windowStart && $nowMin <= $windowEnd);
         }
 
         if ($allowed) {
@@ -148,12 +213,12 @@ class AttendanceService
 
         return [
             'allowed' => false,
-            'message' => "خارج وقت التسجيل ({$start} - {$end})",
+            'message' => "خارج وقت التسجيل",
         ];
     }
 
     /**
-     * إحصائيات لوحة التحكم
+     * Dashboard statistics
      */
     public function getDashboardStats(): array
     {
@@ -170,14 +235,11 @@ class AttendanceService
         ];
     }
 
-    private function timeToMinutes(string $time): int
-    {
-        $p = explode(':', $time);
-        return (int)$p[0] * 60 + (int)($p[1] ?? 0);
-    }
-
     private function getClientIP(): string
     {
-        return function_exists('getClientIP') ? getClientIP() : ($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0');
+        if (function_exists('getClientIP')) {
+            return getClientIP();
+        }
+        return $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
     }
 }

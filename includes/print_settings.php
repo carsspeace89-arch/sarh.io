@@ -1,4 +1,5 @@
 <?php
+// ⛔ LEGACY — DO NOT EXTEND | All new code must go to src/* or api/v1/*
 /**
  * Print Settings Panel - لوحة إعدادات الطباعة
  * Include in any report page BEFORE admin_footer.php

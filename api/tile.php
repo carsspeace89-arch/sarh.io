@@ -1,4 +1,5 @@
-<?php
+﻿<?php
+// ⛔ LEGACY — DO NOT EXTEND | All new code must go to src/* or api/v1/*
 // =============================================================
 // api/tile.php - Map tile proxy to avoid CORS issues
 // Proxies ArcGIS tile requests through our server

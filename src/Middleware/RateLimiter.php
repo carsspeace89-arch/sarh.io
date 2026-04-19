@@ -11,7 +11,7 @@ class RateLimiter
 
     public function __construct(?string $storageDir = null)
     {
-        $this->storageDir = $storageDir ?? sys_get_temp_dir() . '/attendance_rate_limit';
+        $this->storageDir = $storageDir ?? dirname(__DIR__, 2) . '/storage/rate_limit';
         if (!is_dir($this->storageDir)) {
             @mkdir($this->storageDir, 0700, true);
         }

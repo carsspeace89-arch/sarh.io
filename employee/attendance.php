@@ -14,7 +14,9 @@ $employee = null;
 $error    = '';
 
 if (empty($token)) {
-  $error = 'invalid_link';
+  // الرابط منتشر بدون token → تحويل لبوابة PIN
+  header('Location: ' . SITE_URL . '/employee/index.php');
+  exit;
 } else {
   $employee = getEmployeeByToken($token);
   if (!$employee) {
@@ -92,6 +94,11 @@ if ($employee) {
 
 $showCheckoutButton = false; // الانصراف تلقائي دائماً
 
+$profilePhotoUrl = !empty($employee['profile_photo'])
+    ? SITE_URL . '/api/serve-file.php?f=' . urlencode($employee['profile_photo']) . '&t=' . urlencode($token)
+    : '';
+$empInitials = mb_substr($employee['name'] ?? '?', 0, 1);
+
 $jsConfig = json_encode([
   'token'          => $token,
   'status'         => $todayStatus,
@@ -113,18 +120,18 @@ $badgeClass = $todayStatus === 'checked_in' ? 'in' : ($todayStatus === 'checked_
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no, viewport-fit=cover">
   <title><?= SITE_NAME ?></title>
-  <link rel="icon" type="image/png" href="<?= SITE_URL ?>/assets/images/loogo.png">
-  <link rel="apple-touch-icon" href="<?= SITE_URL ?>/assets/images/loogo.png">
+  <link rel="icon" type="image/png" href="<?= SITE_URL ?>/assets/images/loogo.png?v=<?= filemtime(__DIR__ . '/../assets/images/loogo.png') ?>">
+  <link rel="apple-touch-icon" href="<?= SITE_URL ?>/assets/images/loogo.png?v=<?= filemtime(__DIR__ . '/../assets/images/loogo.png') ?>">
   <link rel="manifest" href="<?= SITE_URL ?>/manifest.json">
   <meta name="theme-color" content="#F97316">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="<?= SITE_URL ?>/assets/fonts/tajawal.css">
-  <link rel="stylesheet" href="<?= SITE_URL ?>/assets/css/radar.css?v=<?= time() ?>">
+  <link rel="stylesheet" href="<?= SITE_URL ?>/assets/fonts/tajawal.css?v=<?= filemtime(__DIR__ . '/../assets/fonts/tajawal.css') ?>">
+  <link rel="stylesheet" href="<?= SITE_URL ?>/assets/css/radar.css?v=<?= filemtime(__DIR__ . '/../assets/css/radar.css') ?>">
   <script>window.SITE_URL = '<?= SITE_URL ?>';</script>
 </head>
 
-<body>
+<body class="<?= ($todayStatus !== 'none' && !$error) ? 'profile-mode' : '' ?>">
 
   <?php if ($error): ?>
     <!-- ERROR PAGE — no device overlay needed -->
@@ -154,9 +161,24 @@ $badgeClass = $todayStatus === 'checked_in' ? 'in' : ($todayStatus === 'checked_
   <?php else: ?>
 
     <!-- HEADER -->
-    <div class="header">
+    <div class="header <?= ($todayStatus !== 'none') ? 'header-compact' : '' ?>">
+      <?php if ($todayStatus !== 'none'): ?>
+      <!-- Compact header for profile mode -->
       <div class="hl">
-        <div class="emp-av"><img src="<?= SITE_URL ?>/assets/images/loogo.png" alt="Logo"></div>
+        <div class="emp-av"><?php if ($profilePhotoUrl): ?><img src="<?= htmlspecialchars($profilePhotoUrl) ?>" alt="" onerror="this.style.display='none';this.nextElementSibling&&(this.nextElementSibling.style.display='flex')"><span class="emp-av-fallback" style="display:none;align-items:center;justify-content:center;width:100%;height:100%;font-weight:800;color:#F97316;font-size:.9rem;background:rgba(249,115,22,.1);border-radius:50%"><?= htmlspecialchars($empInitials) ?></span><?php else: ?><span style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-weight:800;color:#F97316;font-size:.9rem;background:rgba(249,115,22,.1);border-radius:50%"><?= htmlspecialchars($empInitials) ?></span><?php endif; ?></div>
+        <div>
+          <div class="emp-name"><?= htmlspecialchars($employee['name']) ?></div>
+          <div class="emp-job"><?= htmlspecialchars($employee['job_title']) ?></div>
+        </div>
+      </div>
+      <div class="hr">
+        <div class="hdr-time" id="hdrTime"></div>
+        <div class="hdr-date" id="hdrDate"></div>
+      </div>
+      <?php else: ?>
+      <!-- Full header for radar mode -->
+      <div class="hl">
+        <div class="emp-av"><?php if ($profilePhotoUrl): ?><img src="<?= htmlspecialchars($profilePhotoUrl) ?>" alt="" onerror="this.style.display='none';this.nextElementSibling&&(this.nextElementSibling.style.display='flex')"><span class="emp-av-fallback" style="display:none;align-items:center;justify-content:center;width:100%;height:100%;font-weight:800;color:#F97316;font-size:.9rem;background:rgba(249,115,22,.1);border-radius:50%"><?= htmlspecialchars($empInitials) ?></span><?php else: ?><span style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-weight:800;color:#F97316;font-size:.9rem;background:rgba(249,115,22,.1);border-radius:50%"><?= htmlspecialchars($empInitials) ?></span><?php endif; ?></div>
         <div>
           <div class="emp-name"><?= htmlspecialchars($employee['name']) ?></div>
           <div class="emp-job"><?= htmlspecialchars($employee['job_title']) ?></div>
@@ -178,7 +200,155 @@ $badgeClass = $todayStatus === 'checked_in' ? 'in' : ($todayStatus === 'checked_
           <div class="hdr-date"><span data-i18n="checked_in_at"></span> <?= date('h:i A', strtotime($checkInTime)) ?></div>
         <?php endif; ?>
       </div>
+      <?php endif; ?>
     </div>
+
+    <!-- NEWS TICKER (شريط الأخبار المتحرك) -->
+    <div class="news-ticker-wrap" id="newsTicker" style="display:none">
+      <div class="ticker-icon">📢</div>
+      <div class="ticker-content">
+        <div class="ticker-items" id="tickerItems">
+          <!-- سيتم تحميل الإعلانات هنا عبر JavaScript -->
+        </div>
+      </div>
+    </div>
+
+    <?php if ($todayStatus !== 'none'): ?>
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!-- PROFILE ZONE — shown after check-in / check-out       -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <div class="profile-zone" id="profileZone">
+
+      <!-- Status + Timer Card -->
+      <div class="status-hero">
+        <div class="status-hero-top">
+          <div class="status-hero-avatar" id="heroAvatarBtn" title="تغيير الصورة">
+            <?php if ($profilePhotoUrl): ?>
+              <img src="<?= htmlspecialchars($profilePhotoUrl) ?>" alt="" id="heroAvatarImg" onerror="this.style.display='none';var ini=document.getElementById('heroAvatarInitials');if(ini)ini.style.display='flex'">
+              <span class="status-hero-initials" id="heroAvatarInitials" style="display:none"><?= htmlspecialchars($empInitials) ?></span>
+            <?php else: ?>
+              <span class="status-hero-initials" id="heroAvatarInitials"><?= htmlspecialchars($empInitials) ?></span>
+              <img src="" alt="" id="heroAvatarImg" style="display:none">
+            <?php endif; ?>
+            <div class="status-hero-dot <?= $todayStatus === 'checked_in' ? 'online' : '' ?>"></div>
+            <div class="avatar-edit-icon">📷</div>
+          </div>
+          <div class="status-hero-info">
+            <div class="status-hero-badge <?= $todayStatus === 'checked_in' ? 'shb-in' : 'shb-out' ?>">
+              <?= $todayStatus === 'checked_in' ? '● مسجّل دخول' : '● اكتمل الدوام' ?>
+            </div>
+            <?php if ($branchName): ?>
+              <div class="status-hero-branch">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+                <?= htmlspecialchars($branchName) ?>
+              </div>
+            <?php endif; ?>
+          </div>
+        </div>
+        <?php if ($todayStatus === 'checked_in' && $checkInTime): ?>
+        <div class="status-hero-timer">
+          <div class="sht-block">
+            <span class="sht-label">الدخول</span>
+            <span class="sht-value"><?= date('h:i A', strtotime($checkInTime)) ?></span>
+          </div>
+          <div class="sht-divider"></div>
+          <div class="sht-block sht-block-main">
+            <span class="sht-label">مدة الدوام</span>
+            <span class="sht-value sht-timer" id="profileWorkTimer">00:00:00</span>
+          </div>
+          <div class="sht-divider"></div>
+          <div class="sht-block">
+            <span class="sht-label">الانصراف</span>
+            <span class="sht-value sht-auto"><?= htmlspecialchars(date('h:i A', strtotime($workEnd))) ?></span>
+          </div>
+        </div>
+        <?php elseif ($todayStatus === 'checked_out' && $checkInTime && $checkOutTime): ?>
+        <div class="status-hero-timer">
+          <div class="sht-block">
+            <span class="sht-label">الدخول</span>
+            <span class="sht-value"><?= date('h:i A', strtotime($checkInTime)) ?></span>
+          </div>
+          <div class="sht-divider"></div>
+          <div class="sht-block sht-block-main">
+            <span class="sht-label">المجموع</span>
+            <span class="sht-value sht-done"><?php
+              $diff = strtotime($checkOutTime) - strtotime($checkInTime);
+              $h = floor($diff / 3600); $m = floor(($diff % 3600) / 60);
+              echo ($h > 0 ? $h . ' س ' : '') . $m . ' د';
+            ?></span>
+          </div>
+          <div class="sht-divider"></div>
+          <div class="sht-block">
+            <span class="sht-label">الانصراف</span>
+            <span class="sht-value"><?= date('h:i A', strtotime($checkOutTime)) ?></span>
+          </div>
+        </div>
+        <?php endif; ?>
+      </div>
+
+      <!-- Quick Actions -->
+      <div class="profile-actions">
+        <a href="<?= SITE_URL ?>/employee/my-inbox.php?token=<?= urlencode($token) ?>" class="pa-card">
+          <div class="pa-icon pa-icon-blue">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+          </div>
+          <div class="pa-label">صندوق الوارد</div>
+          <span class="pa-badge" id="profileInboxBadge" style="display:none"></span>
+        </a>
+        <a href="<?= SITE_URL ?>/employee/my-documents.php?token=<?= urlencode($token) ?>" class="pa-card">
+          <div class="pa-icon pa-icon-green">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          </div>
+          <div class="pa-label">وثائقي</div>
+        </a>
+        <button class="pa-card" id="paReportBtn">
+          <div class="pa-icon pa-icon-red">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </div>
+          <div class="pa-label">بلاغ سري</div>
+        </button>
+        <button class="pa-card" id="paRefreshBtn">
+          <div class="pa-icon pa-icon-orange">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
+          </div>
+          <div class="pa-label">تحديث</div>
+        </button>
+      </div>
+
+      <!-- Announcements Section -->
+      <div class="profile-section" id="profileAnnouncementsSection" style="display:none">
+        <div class="ps-header">
+          <span class="ps-icon">📢</span>
+          <span class="ps-title">الإعلانات والأخبار</span>
+        </div>
+        <div class="ps-body" id="profileAnnouncementsList"></div>
+      </div>
+
+      <!-- Today's History -->
+      <?php if ($historyRecords): ?>
+      <div class="profile-section">
+        <div class="ps-header">
+          <span class="ps-icon">📋</span>
+          <span class="ps-title">سجل اليوم</span>
+        </div>
+        <div class="ps-body">
+          <?php foreach ($historyRecords as $rec): ?>
+            <div class="ph-item">
+              <div class="ph-type ph-type-<?= $rec['type'] ?>">
+                <?= $rec['type'] === 'in' ? '▶ حضور' : '◀ انصراف' ?>
+              </div>
+              <div class="ph-time"><?= date('h:i A', strtotime($rec['timestamp'])) ?></div>
+            </div>
+          <?php endforeach; ?>
+        </div>
+      </div>
+      <?php endif; ?>
+
+    </div>
+
+    <?php endif; ?>
+
+    <?php if ($todayStatus === 'none'): ?>
 
     <!-- RADAR ZONE -->
     <div class="radar-zone">
@@ -283,7 +453,88 @@ $badgeClass = $todayStatus === 'checked_in' ? 'in' : ($todayStatus === 'checked_
       </svg>
     </button>
 
-    <!-- SECRET REPORT MODAL -->
+    <?php endif; ?>
+
+    <!-- SHIFT REMINDER ALERT (populated by JS polling) -->
+    <div class="shift-alert" id="shiftAlert" style="display:none">
+      <div class="shift-alert-icon" id="shiftAlertIcon">⏰</div>
+      <div class="shift-alert-body">
+        <div class="shift-alert-title" id="shiftAlertTitle"></div>
+        <div class="shift-alert-msg" id="shiftAlertMsg"></div>
+      </div>
+      <button class="shift-alert-close" id="shiftAlertClose">&times;</button>
+    </div>
+
+    <!-- NOTIFICATION TOAST CONTAINER -->
+    <div class="notif-toast-wrap" id="notifToastWrap"></div>
+
+    <!-- PROFILE PHOTO UPLOAD MODAL -->
+    <div class="photo-modal-overlay" id="photoModal">
+      <div class="photo-modal">
+        <div class="photo-modal-header">
+          <span>📷 تغيير الصورة الشخصية</span>
+          <button class="photo-modal-close" id="photoModalClose">&times;</button>
+        </div>
+        <div class="photo-modal-body">
+          <div class="photo-preview-wrap">
+            <?php if ($profilePhotoUrl): ?>
+              <img src="<?= htmlspecialchars($profilePhotoUrl) ?>" alt="" class="photo-preview-img" id="photoPreviewImg" onerror="this.style.display='none';var ph=document.getElementById('photoPreviewPlaceholder');if(ph)ph.style.display='flex'">
+              <div class="photo-preview-placeholder" id="photoPreviewPlaceholder" style="display:none"><?= htmlspecialchars($empInitials) ?></div>
+            <?php else: ?>
+              <div class="photo-preview-placeholder" id="photoPreviewPlaceholder"><?= htmlspecialchars($empInitials) ?></div>
+              <img src="" alt="" class="photo-preview-img" id="photoPreviewImg" style="display:none">
+            <?php endif; ?>
+          </div>
+          <label class="photo-pick-btn" id="photoPickLabel">
+            📸 اختر صورة
+            <input type="file" accept="image/jpeg,image/png,image/webp" id="photoFileInput" style="display:none">
+          </label>
+          <div class="photo-upload-status" id="photoUploadStatus"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BOTTOM NAVIGATION BAR (both modes) -->
+    <nav class="bottom-nav" id="bottomNav">
+      <a href="<?= SITE_URL ?>/employee/attendance.php?token=<?= urlencode($token) ?>" class="bnav-item active">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22" fill="none" stroke="#fff" stroke-width="2"/></svg>
+        <span>الرئيسية</span>
+      </a>
+      <a href="<?= SITE_URL ?>/employee/my-inbox.php?token=<?= urlencode($token) ?>" class="bnav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+        <span>الوارد</span>
+        <span class="bnav-badge" id="bnavInboxBadge" style="display:none"></span>
+      </a>
+      <a href="<?= SITE_URL ?>/employee/my-documents.php?token=<?= urlencode($token) ?>" class="bnav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        <span>وثائقي</span>
+      </a>
+      <a href="<?= SITE_URL ?>/employee/complaints.php?token=<?= urlencode($token) ?>" class="bnav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <span>شكوى</span>
+      </a>
+      <button class="bnav-item" id="bnavReportBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <span>بلاغ</span>
+      </button>
+      <button class="bnav-item" id="bnavMoreBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+        <span>المزيد</span>
+      </button>
+    </nav>
+
+    <!-- More Menu Popup -->
+    <div class="more-menu-overlay" id="moreMenuOverlay"></div>
+    <div class="more-menu" id="moreMenu">
+      <button class="mm-item" id="mmSwitchUser">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+        <span>تغيير المستخدم</span>
+      </button>
+      <button class="mm-item" id="mmRefresh">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
+        <span>تحديث الصفحة</span>
+      </button>
+    </div>
     <div class="sr-modal-overlay" id="srModal">
       <div class="sr-modal">
         <div class="sr-modal-header">
@@ -465,6 +716,219 @@ $badgeClass = $todayStatus === 'checked_in' ? 'in' : ($todayStatus === 'checked_
         try { localStorage.removeItem('att_pin_auth'); } catch(e) {}
         window.location.href = '<?= SITE_URL ?>/employee/';
       }
+
+      // ── Toggle More Menu (bottom nav) ──
+      function toggleMoreMenu() {
+        var menu = document.getElementById('moreMenu');
+        var overlay = document.getElementById('moreMenuOverlay');
+        if (menu && overlay) {
+          menu.classList.toggle('show');
+          overlay.classList.toggle('show');
+        }
+      }
+      document.getElementById('moreMenuOverlay')?.addEventListener('click', function() {
+        toggleMoreMenu();
+      });
+
+      // ── Bind event listeners (no inline onclick) ──
+      document.getElementById('paReportBtn')?.addEventListener('click', function(){ openReportModal(); });
+      document.getElementById('paRefreshBtn')?.addEventListener('click', function(){ location.reload(); });
+      document.getElementById('bnavReportBtn')?.addEventListener('click', function(){ openReportModal(); });
+      document.getElementById('bnavMoreBtn')?.addEventListener('click', function(){ toggleMoreMenu(); });
+      document.getElementById('mmSwitchUser')?.addEventListener('click', function(){ switchUser(); });
+      document.getElementById('mmRefresh')?.addEventListener('click', function(){ location.reload(); });
+
+      // ── Profile Work Timer ──
+      <?php if ($todayStatus === 'checked_in' && $checkInTime): ?>
+      (function profileTimer() {
+        var t0 = new Date('<?= date("Y-m-d\\TH:i:s", strtotime($checkInTime)) ?>').getTime();
+        function tick() {
+          var d = Date.now() - t0;
+          var h = Math.floor(d/3600000), m = Math.floor((d%3600000)/60000), s = Math.floor((d%60000)/1000);
+          var el = document.getElementById('profileWorkTimer');
+          if (el) el.textContent = String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+          setTimeout(tick, 1000);
+        }
+        tick();
+      })();
+      <?php endif; ?>
+
+      // ── Profile Announcements ──
+      (function loadProfileAnnouncements() {
+        var section = document.getElementById('profileAnnouncementsSection');
+        var list = document.getElementById('profileAnnouncementsList');
+        if (!section || !list) return;
+        var branchId = <?= json_encode($branchId) ?>;
+        var apiUrl = window.SITE_URL + '/api/announcements.php?ticker_only=0' + (branchId ? '&branch_id=' + branchId : '');
+        fetch(apiUrl).then(function(r){ return r.json(); }).then(function(data) {
+          if (data.success && data.data.announcements && data.data.announcements.length > 0) {
+            section.style.display = '';
+            var html = '';
+            data.data.announcements.forEach(function(ann) {
+              var pClass = ann.priority === 'urgent' ? 'pann-urgent' : ann.priority === 'high' ? 'pann-high' : '';
+              html += '<div class="pann-card ' + pClass + '">'
+                + '<div class="pann-icon">' + (ann.icon || '📢') + '</div>'
+                + '<div class="pann-body">'
+                + '<div class="pann-title">' + escapeHtml(ann.title) + '</div>'
+                + (ann.content ? '<div class="pann-text">' + escapeHtml(ann.content) + '</div>' : '')
+                + '</div></div>';
+            });
+            list.innerHTML = html;
+          }
+        }).catch(function(){});
+      })();
+
+      // ── Profile Inbox Badge (initial) ──
+      (function updateProfileBadge() {
+        var token = <?= json_encode($token) ?>;
+        if (!token) return;
+        fetch(window.SITE_URL + '/api/inbox-count.php?token=' + encodeURIComponent(token))
+          .then(function(r){ return r.json(); })
+          .then(function(d) {
+            ['profileInboxBadge','bnavInboxBadge','inboxFloatBadge'].forEach(function(id) {
+              var el = document.getElementById(id);
+              if (!el) return;
+              if (d.count > 0) { el.textContent = d.count > 99 ? '99+' : d.count; el.style.display = ''; }
+              else { el.style.display = 'none'; }
+            });
+          }).catch(function(){});
+      })();
+
+      // ══════════════════════════════════════════════════════
+      // REAL-TIME NOTIFICATION POLLING (every 30s)
+      // ══════════════════════════════════════════════════════
+      (function initNotificationPolling() {
+        var token = <?= json_encode($token) ?>;
+        if (!token) return;
+        var lastInboxCount = 0;
+        var shiftAlertDismissed = false;
+        var seenNotifIds = {};
+
+        document.getElementById('shiftAlertClose')?.addEventListener('click', function() {
+          document.getElementById('shiftAlert').style.display = 'none';
+          shiftAlertDismissed = true;
+        });
+
+        function showToast(icon, title, msg, type) {
+          var wrap = document.getElementById('notifToastWrap');
+          if (!wrap) return;
+          var toast = document.createElement('div');
+          toast.className = 'notif-toast' + (type === 'urgent' ? ' notif-toast-urgent' : '');
+          toast.innerHTML = '<div class="notif-toast-icon">' + (icon || '🔔') + '</div>'
+            + '<div class="notif-toast-body"><div class="notif-toast-title">' + escapeHtml(title) + '</div>'
+            + '<div class="notif-toast-msg">' + escapeHtml(msg) + '</div></div>';
+          wrap.appendChild(toast);
+          requestAnimationFrame(function(){ toast.classList.add('show'); });
+          setTimeout(function(){ toast.classList.remove('show'); setTimeout(function(){ toast.remove(); }, 400); }, 5000);
+        }
+
+        function pollNotifications() {
+          fetch(window.SITE_URL + '/api/employee-notifications.php?token=' + encodeURIComponent(token))
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+              if (!data.success) return;
+
+              // Update inbox badges
+              var count = data.inbox_count || 0;
+              ['profileInboxBadge','bnavInboxBadge','inboxFloatBadge'].forEach(function(id) {
+                var el = document.getElementById(id);
+                if (!el) return;
+                if (count > 0) { el.textContent = count > 99 ? '99+' : count; el.style.display = ''; }
+                else { el.style.display = 'none'; }
+              });
+
+              // Show toast for new inbox messages
+              if (count > lastInboxCount && lastInboxCount > 0) {
+                var recent = data.inbox_recent || [];
+                recent.forEach(function(msg) {
+                  if (!seenNotifIds[msg.id]) {
+                    seenNotifIds[msg.id] = true;
+                    var icons = {violation:'⚠️', deduction:'💰', reward:'🎁', warning:'🔔', info:'📩'};
+                    showToast(icons[msg.msg_type] || '📩', msg.title, msg.body || '', msg.msg_type === 'warning' ? 'urgent' : '');
+                  }
+                });
+              }
+              lastInboxCount = count;
+
+              // Shift alerts
+              if (!shiftAlertDismissed && data.alerts && data.alerts.length > 0) {
+                var alert = data.alerts[0];
+                var el = document.getElementById('shiftAlert');
+                if (el) {
+                  document.getElementById('shiftAlertIcon').textContent = alert.icon;
+                  document.getElementById('shiftAlertTitle').textContent = alert.title;
+                  document.getElementById('shiftAlertMsg').textContent = alert.message;
+                  el.className = 'shift-alert' + (alert.urgent ? ' shift-alert-urgent' : '');
+                  el.style.display = '';
+                }
+              }
+            }).catch(function(){});
+        }
+
+        // Initial poll after 2s, then every 30s
+        setTimeout(pollNotifications, 2000);
+        setInterval(pollNotifications, 30000);
+      })();
+
+      // ══════════════════════════════════════════════════════
+      // PROFILE PHOTO UPLOAD
+      // ══════════════════════════════════════════════════════
+      (function initPhotoUpload() {
+        var avatarBtn = document.getElementById('heroAvatarBtn');
+        var modal = document.getElementById('photoModal');
+        var closeBtn = document.getElementById('photoModalClose');
+        var fileInput = document.getElementById('photoFileInput');
+        var previewImg = document.getElementById('photoPreviewImg');
+        var placeholder = document.getElementById('photoPreviewPlaceholder');
+        var statusEl = document.getElementById('photoUploadStatus');
+        if (!modal) return;
+
+        if (avatarBtn) avatarBtn.addEventListener('click', function() { modal.classList.add('show'); });
+        if (closeBtn) closeBtn.addEventListener('click', function() { modal.classList.remove('show'); });
+        modal.addEventListener('click', function(e) { if (e.target === modal) modal.classList.remove('show'); });
+
+        if (fileInput) fileInput.addEventListener('change', function() {
+          var file = this.files[0];
+          if (!file) return;
+          if (file.size > 5 * 1024 * 1024) { statusEl.textContent = '❌ الحجم أكبر من 5 ميجا'; statusEl.className = 'photo-upload-status error'; return; }
+
+          // Preview
+          var reader = new FileReader();
+          reader.onload = function(e) {
+            previewImg.src = e.target.result;
+            previewImg.style.display = '';
+            if (placeholder) placeholder.style.display = 'none';
+          };
+          reader.readAsDataURL(file);
+
+          // Upload
+          statusEl.textContent = '⏳ جاري الرفع...';
+          statusEl.className = 'photo-upload-status';
+          var fd = new FormData();
+          fd.append('token', <?= json_encode($token) ?>);
+          fd.append('photo', file);
+
+          fetch(window.SITE_URL + '/api/employee-upload-photo.php', { method: 'POST', body: fd })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+              if (d.success) {
+                statusEl.textContent = '✅ ' + d.message;
+                statusEl.className = 'photo-upload-status success';
+                // Update all avatar images
+                var heroImg = document.getElementById('heroAvatarImg');
+                var heroInit = document.getElementById('heroAvatarInitials');
+                if (heroImg) { heroImg.src = d.photo_url; heroImg.style.display = ''; }
+                if (heroInit) heroInit.style.display = 'none';
+              } else {
+                statusEl.textContent = '❌ ' + (d.message || 'فشل الرفع');
+                statusEl.className = 'photo-upload-status error';
+              }
+            }).catch(function() {
+              statusEl.textContent = '❌ خطأ في الاتصال';
+              statusEl.className = 'photo-upload-status error';
+            });
+        });
+      })();
 
       let mediaRecorder = null;
       let audioChunks = [];
@@ -824,42 +1288,351 @@ $badgeClass = $todayStatus === 'checked_in' ? 'in' : ($todayStatus === 'checked_
     </script>
   <?php endif; ?>
 <script>
-// إلغاء تسجيل جميع Service Workers القديمة
-if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.getRegistrations().then(function(registrations) {
-        registrations.forEach(function(registration) {
-            registration.unregister();
+// ── تسجيل Service Worker + اشتراك Push Notifications ──
+(function() {
+    if (!('serviceWorker' in navigator)) return;
+
+    const VAPID_PUBLIC = <?= json_encode(getSystemSetting('vapid_public_key', '')) ?>;
+    const TOKEN = <?= json_encode($token) ?>;
+    const SW_URL = window.SITE_URL + '/sw.js';
+    const SUBSCRIBE_URL = window.SITE_URL + '/api/push-subscribe.php';
+
+    // تسجيل Service Worker
+    navigator.serviceWorker.register(SW_URL, { scope: '/' })
+        .then(function(registration) {
+            console.log('[SW] Registered:', registration.scope);
+
+            // إذا لا يوجد مفتاح VAPID — لا نشترك
+            if (!VAPID_PUBLIC || !TOKEN) return;
+
+            // انتظار حتى يصبح الـ SW نشطاً
+            var sw = registration.installing || registration.waiting || registration.active;
+            if (sw && sw.state !== 'activated') {
+                sw.addEventListener('statechange', function() {
+                    if (sw.state === 'activated') subscribeToPush(registration);
+                });
+            } else {
+                subscribeToPush(registration);
+            }
+        })
+        .catch(function(err) {
+            console.warn('[SW] Registration failed:', err);
         });
-    });
-    if (window.caches) {
-        caches.keys().then(function(names) {
-            names.forEach(function(name) { caches.delete(name); });
+
+    function subscribeToPush(registration) {
+        // التحقق من إذن الإشعارات
+        if (Notification.permission === 'denied') return;
+
+        // طلب الإذن إذا لم يُمنح
+        if (Notification.permission === 'default') {
+            Notification.requestPermission().then(function(perm) {
+                if (perm === 'granted') doSubscribe(registration);
+            });
+            return;
+        }
+
+        doSubscribe(registration);
+    }
+
+    function doSubscribe(registration) {
+        var applicationServerKey = urlBase64ToUint8Array(VAPID_PUBLIC);
+
+        registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: applicationServerKey
+        })
+        .then(function(subscription) {
+            var subJson = subscription.toJSON();
+            // إرسال الاشتراك للخادم
+            return fetch(SUBSCRIBE_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    token: TOKEN,
+                    action: 'subscribe',
+                    subscription: {
+                        endpoint: subJson.endpoint,
+                        keys: {
+                            p256dh: subJson.keys.p256dh,
+                            auth: subJson.keys.auth
+                        }
+                    }
+                })
+            });
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (d.success) console.log('[Push] Subscribed successfully');
+        })
+        .catch(function(err) {
+            console.warn('[Push] Subscription failed:', err);
         });
     }
+
+    function urlBase64ToUint8Array(base64String) {
+        var padding = '='.repeat((4 - base64String.length % 4) % 4);
+        var base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+        var rawData = atob(base64);
+        var outputArray = new Uint8Array(rawData.length);
+        for (var i = 0; i < rawData.length; ++i) {
+            outputArray[i] = rawData.charCodeAt(i);
+        }
+        return outputArray;
+    }
+})();
+</script>
+
+<script>
+// ── إعادة جلب الإشعارات فوراً عند العودة إلى التبويب ──
+(function() {
+    const token = <?= json_encode($token) ?>;
+    if (!token) return;
+
+    function quickPoll() {
+        fetch(window.SITE_URL + '/api/employee-notifications.php?token=' + encodeURIComponent(token))
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (!data.success) return;
+                var count = data.inbox_count || 0;
+                ['profileInboxBadge','bnavInboxBadge','inboxFloatBadge'].forEach(function(id) {
+                    var el = document.getElementById(id);
+                    if (!el) return;
+                    if (count > 0) { el.textContent = count > 99 ? '99+' : count; el.style.display = ''; }
+                    else { el.style.display = 'none'; }
+                });
+            }).catch(function(){});
+    }
+
+    // عند العودة من الخلفية — جلب فوري
+    document.addEventListener('visibilitychange', function() {
+        if (document.visibilityState === 'visible') quickPoll();
+    });
+    window.addEventListener('focus', function() { quickPoll(); });
+})();
+
+// ── استقبال رسائل من Service Worker عند ورود إشعار Push ──
+if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+    navigator.serviceWorker.addEventListener('message', function(event) {
+        if (event.data && event.data.type === 'PUSH_RECEIVED') {
+            // تحديث شارة صندوق الوارد فوراً
+            var badge = document.getElementById('inboxFloatBadge');
+            if (badge) {
+                var current = parseInt(badge.textContent) || 0;
+                badge.textContent = current + 1;
+                badge.style.display = 'inline-block';
+            }
+            // عرض إشعار داخل الصفحة
+            showInPageNotification(event.data.title, event.data.body, event.data.url);
+        }
+    });
+}
+
+function showInPageNotification(title, body, url) {
+    var existing = document.getElementById('pushNotifBanner');
+    if (existing) existing.remove();
+
+    var banner = document.createElement('div');
+    banner.id = 'pushNotifBanner';
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:linear-gradient(135deg,#F97316,#EA580C);color:#fff;padding:14px 18px;font-family:Tajawal,sans-serif;direction:rtl;box-shadow:0 4px 20px rgba(0,0,0,0.3);cursor:pointer;animation:slideDown .3s ease';
+    banner.innerHTML = '<div style="font-weight:700;font-size:1rem;margin-bottom:2px">' + escapeHtml(title) + '</div>'
+        + '<div style="font-size:.85rem;opacity:.9">' + escapeHtml(body) + '</div>'
+        + '<div style="position:absolute;top:8px;left:12px;font-size:1.2rem;cursor:pointer" onclick="event.stopPropagation();this.parentElement.remove()">✕</div>';
+    banner.onclick = function() {
+        banner.remove();
+        if (url) window.location.href = url;
+    };
+    document.body.appendChild(banner);
+
+    // إخفاء تلقائي بعد 8 ثوانٍ
+    setTimeout(function() { if (banner.parentElement) banner.remove(); }, 8000);
+}
+
+function escapeHtml(text) {
+    var d = document.createElement('div');
+    d.textContent = text || '';
+    return d.innerHTML;
 }
 </script>
 
 <script>
-// ── تحديث شارة صندوق الوارد ──
-(function updateInboxBadge() {
-    const token = <?= json_encode($token) ?>;
-    if (!token) return;
-    fetch(window.SITE_URL + '/api/inbox-count.php?token=' + encodeURIComponent(token))
-        .then(r => r.json())
-        .then(d => {
-            const badge = document.getElementById('inboxFloatBadge');
-            if (!badge) return;
-            if (d.count > 0) {
-                badge.textContent = d.count > 99 ? '99+' : d.count;
-                badge.style.display = 'inline-block';
-            } else {
-                badge.style.display = 'none';
-            }
-        })
-        .catch(() => {});
-    setTimeout(updateInboxBadge, 60000);
+// =============================================================
+// NEWS TICKER - جلب وعرض الإعلانات في الشريط المتحرك
+// =============================================================
+(function() {
+    // جلب الإعلانات من API
+    function fetchAnnouncements() {
+        const branchId = <?= json_encode($branchId) ?>;
+        const apiUrl = window.SITE_URL + '/api/announcements.php?ticker_only=1' + 
+                      (branchId ? '&branch_id=' + branchId : '');
+        
+        fetch(apiUrl)
+            .then(function(response) {
+                if (!response.ok) throw new Error('Failed to fetch announcements');
+                return response.json();
+            })
+            .then(function(data) {
+                if (data.success && data.data.announcements && data.data.announcements.length > 0) {
+                    displayTicker(data.data.announcements);
+                }
+            })
+            .catch(function(error) {
+                console.log('[Ticker] Error:', error);
+            });
+    }
+    
+    // عرض الإعلانات في الشريط
+    function displayTicker(announcements) {
+        const ticker = document.getElementById('newsTicker');
+        const tickerItems = document.getElementById('tickerItems');
+        
+        if (!ticker || !tickerItems || announcements.length === 0) return;
+        
+        // إنشاء عناصر الإعلانات
+        let itemsHTML = '';
+        announcements.forEach(function(ann) {
+            const priorityClass = ann.priority === 'urgent' || ann.priority === 'high' 
+                ? 'ticker-priority-' + ann.priority 
+                : '';
+            
+            itemsHTML += '<div class="ticker-item ' + priorityClass + '">' +
+                         '<span class="ticker-item-icon">' + escapeHtml(ann.icon || '📢') + '</span>' +
+                         '<span class="ticker-item-text">' + escapeHtml(ann.title) + '</span>' +
+                         '</div>';
+        });
+        
+        // مضاعفة المحتوى لتحقيق التمرير اللانهائي
+        tickerItems.innerHTML = itemsHTML + itemsHTML;
+        
+        // عرض الشريط
+        ticker.style.display = 'flex';
+        
+        // ضبط سرعة الحركة بناءً على عدد الإعلانات
+        const itemCount = announcements.length;
+        const duration = Math.max(20, itemCount * 8); // 8 ثواني لكل إعلان كحد أدنى
+        tickerItems.style.animationDuration = duration + 's';
+    }
+    
+    // تشغيل عند تحميل الصفحة
+    if (!<?= json_encode($error) ?>) {
+        fetchAnnouncements();
+        // تحديث الإعلانات كل 5 دقائق
+        setInterval(fetchAnnouncements, 5 * 60 * 1000);
+    }
 })();
 </script>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- PWA INSTALL PROMPT — يظهر دائماً إذا التطبيق غير مثبت -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div class="pwa-install-banner" id="pwaInstallBanner" style="display:none">
+  <div class="pwa-install-inner">
+    <div class="pwa-install-icon">
+      <img src="<?= SITE_URL ?>/assets/images/loogo.png" alt="" width="40" height="40" style="border-radius:10px">
+    </div>
+    <div class="pwa-install-text">
+      <div class="pwa-install-title">تثبيت التطبيق</div>
+      <div class="pwa-install-desc">أضف التطبيق للشاشة الرئيسية لتجربة أسرع</div>
+    </div>
+    <button class="pwa-install-btn" id="pwaInstallBtn">تثبيت</button>
+    <button class="pwa-install-close" id="pwaInstallClose">&times;</button>
+  </div>
+</div>
+
+<script>
+// ── PWA Install Prompt Manager ──
+(function() {
+  var banner = document.getElementById('pwaInstallBanner');
+  var installBtn = document.getElementById('pwaInstallBtn');
+  var closeBtn = document.getElementById('pwaInstallClose');
+  if (!banner) return;
+
+  var deferredPrompt = null;
+
+  // Check if already installed (standalone mode)
+  function isInstalled() {
+    return window.matchMedia('(display-mode: standalone)').matches
+        || window.navigator.standalone === true;
+  }
+
+  function showBanner() {
+    if (isInstalled()) return;
+    banner.style.display = '';
+    setTimeout(function() { banner.classList.add('show'); }, 50);
+  }
+
+  function hideBannerTemp() {
+    banner.classList.remove('show');
+    setTimeout(function() { banner.style.display = 'none'; }, 400);
+    // Re-show after 60 seconds if still not installed
+    setTimeout(function() { if (!isInstalled()) showBanner(); }, 60000);
+  }
+
+  // Listen for the native prompt
+  window.addEventListener('beforeinstallprompt', function(e) {
+    e.preventDefault();
+    deferredPrompt = e;
+    showBanner();
+  });
+
+  // Install button click
+  installBtn.addEventListener('click', function() {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then(function(result) {
+        if (result.outcome === 'accepted') {
+          banner.classList.remove('show');
+          setTimeout(function() { banner.style.display = 'none'; }, 400);
+        }
+        deferredPrompt = null;
+      });
+    } else {
+      // iOS / browsers that don't support beforeinstallprompt
+      showIOSInstructions();
+    }
+  });
+
+  // Close/dismiss button — hide temporarily, re-show after 60s
+  closeBtn.addEventListener('click', function() {
+    hideBannerTemp();
+  });
+
+  // iOS instructions overlay
+  function showIOSInstructions() {
+    var ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:99999;display:flex;align-items:flex-end;justify-content:center;padding:20px;font-family:Tajawal,sans-serif;direction:rtl';
+    ov.innerHTML = '<div style="background:#fff;border-radius:20px 20px 0 0;padding:24px 20px 32px;max-width:400px;width:100%;text-align:center">'
+      + '<div style="font-size:2.5rem;margin-bottom:10px">📲</div>'
+      + '<div style="font-size:1rem;font-weight:800;color:#1E293B;margin-bottom:6px">تثبيت التطبيق</div>'
+      + '<div style="font-size:.82rem;color:#64748B;line-height:1.7;margin-bottom:16px">'
+      + 'في متصفح Safari، اضغط على زر المشاركة '
+      + '<span style="display:inline-block;background:#007AFF;color:#fff;border-radius:6px;padding:2px 6px;font-size:.75rem;vertical-align:middle">⬆️</span>'
+      + ' ثم اختر <strong>"إضافة إلى الشاشة الرئيسية"</strong>'
+      + '</div>'
+      + '<button style="width:100%;padding:12px;border:none;border-radius:12px;background:linear-gradient(135deg,#F97316,#EA580C);color:#fff;font-size:.95rem;font-weight:700;font-family:inherit;cursor:pointer" onclick="this.closest(\'div[style]\').remove()">فهمت</button>'
+      + '</div>';
+    ov.addEventListener('click', function(e) { if (e.target === ov) ov.remove(); });
+    document.body.appendChild(ov);
+  }
+
+  // Show banner on load if not installed
+  // For browsers without beforeinstallprompt (iOS Safari), use a timer
+  if (isInstalled()) return;
+  var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  var isSafari = /safari/i.test(navigator.userAgent) && !/chrome|crios/i.test(navigator.userAgent);
+  if (isIOS || (!('BeforeInstallPromptEvent' in window) && !deferredPrompt)) {
+    // Show after 2 seconds for iOS / unsupported
+    setTimeout(showBanner, 2000);
+  }
+
+  // Re-check when app becomes visible again
+  document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'visible' && !isInstalled()) {
+      showBanner();
+    }
+  });
+})();
+</script>
+
 </body>
 
 </html>

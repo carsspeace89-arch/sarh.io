@@ -1,6 +1,11 @@
 <?php
+// ⛔ LEGACY — DO NOT EXTEND | All new code must go to src/* or api/v1/*
 // =============================================================
-// includes/functions.php - الدوال العامة للنظام
+// includes/functions.php - الدوال العامة للنظام (v5.0)
+// =============================================================
+// Pure helpers + backward-compatible wrappers for business logic.
+// Business logic is now in App\Services\* — these functions
+// delegate to services when available, otherwise use legacy code.
 // =============================================================
 
 require_once __DIR__ . '/db.php';
@@ -62,10 +67,25 @@ function calculateDistance(float $lat1, float $lon1, float $lat2, float $lon2): 
 
 /**
  * تحميل جميع الإعدادات دفعة واحدة (تحسين الأداء - تجنب N+1 queries)
+ * Now uses Redis cache service when available for sub-millisecond reads
  * @param bool $refresh إعادة التحميل من DB (بعد setSystemSetting)
  */
 function loadAllSettings(bool $refresh = false): array {
     static $cache = null;
+
+    // Use Redis cache if available
+    if (class_exists('\App\Services\RedisCacheService') && !$refresh) {
+        try {
+            $settings = \App\Services\RedisCacheService::getInstance()->getSettings();
+            if (!empty($settings)) {
+                $cache = $settings;
+                return $cache;
+            }
+        } catch (\Throwable $e) {
+            // Fall through to DB
+        }
+    }
+
     if ($cache === null || $refresh) {
         try {
             $rows  = db()->query("SELECT setting_key, setting_value FROM settings")->fetchAll();
@@ -79,11 +99,22 @@ function loadAllSettings(bool $refresh = false): array {
 
 /**
  * التحقق إذا كان الموظف داخل نطاق الجيوفينس
+ * @deprecated Use App\Services\GeofenceService::isWithinGeofence() instead
  * @param float $empLat إحداثيات الموظف
  * @param float $empLon إحداثيات الموظف
  * @param int|null $branchId معرف الفرع (اختياري)
  */
 function isWithinGeofence(float $empLat, float $empLon, ?int $branchId = null): array {
+    // Delegate to hardened GeofenceService if available
+    if (class_exists('\App\Services\GeofenceService')) {
+        try {
+            $geo = new \App\Services\GeofenceService();
+            return $geo->isWithinGeofence($empLat, $empLon, $branchId);
+        } catch (\Throwable $e) {
+            // Fall through to legacy implementation
+        }
+    }
+
     $workLat = 0;
     $workLon = 0;
     $radius  = 500;
@@ -129,6 +160,7 @@ function isWithinGeofence(float $empLat, float $empLon, ?int $branchId = null): 
 
 /**
  * تسجيل حضور أو انصراف موظف
+ * @deprecated Use App\Services\AttendanceService::record() instead
  * يملأ shift_id تلقائياً + closed_by_checkin_id للانصراف
  */
 function recordAttendance(int $employeeId, string $type, float $lat, float $lon, float $accuracy = 0): array {
@@ -234,12 +266,20 @@ function hasRecentAttendance(int $employeeId, string $type, int $minutes = 5): b
 }
 
 /**
- * جلب موظف عبر token
+ * جلب موظف عبر token (مع دعم انتهاء الصلاحية)
  */
 function getEmployeeByToken(string $token): ?array {
     $stmt = db()->prepare("SELECT * FROM employees WHERE unique_token = ? AND is_active = 1 AND deleted_at IS NULL LIMIT 1");
     $stmt->execute([$token]);
-    return $stmt->fetch() ?: null;
+    $employee = $stmt->fetch() ?: null;
+
+    if ($employee && !empty($employee['token_expires_at'])) {
+        if (strtotime($employee['token_expires_at']) < time()) {
+            return null; // Token expired
+        }
+    }
+
+    return $employee;
 }
 
 /**
@@ -262,6 +302,15 @@ function setSystemSetting(string $key, string $value): void {
     $stmt->execute([$key, $value]);
     // إبطال الـ cache بعد التحديث عبر حيلة static variable
     loadAllSettings(true);
+
+    // Invalidate Redis settings cache
+    if (class_exists('\App\Services\RedisCacheService')) {
+        try {
+            \App\Services\RedisCacheService::getInstance()->invalidateSettings();
+        } catch (\Throwable $e) {
+            // Non-critical, settings will refresh on next TTL expiry
+        }
+    }
 }
 
 /**
@@ -328,6 +377,93 @@ function jsonResponse(array $data, int $code = 200): void {
     header('Content-Type: application/json; charset=utf-8');
     echo json_encode($data, JSON_UNESCAPED_UNICODE);
     exit;
+}
+
+/**
+ * استخراج host من Origin/Referer بشكل آمن
+ */
+function extractHostFromUrl(string $url): string {
+    $host = parse_url($url, PHP_URL_HOST);
+    return is_string($host) ? strtolower($host) : '';
+}
+
+/**
+ * إعداد headers أمان موحدة لنقاط API
+ */
+function setupApiHeaders(array $allowedMethods = ['POST', 'OPTIONS']): void {
+    $siteHost = extractHostFromUrl(SITE_URL);
+    $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+    $originHost = $origin ? extractHostFromUrl($origin) : '';
+
+    header('Content-Type: application/json; charset=utf-8');
+    header('X-Content-Type-Options: nosniff');
+    header('Referrer-Policy: strict-origin-when-cross-origin');
+    header('Vary: Origin');
+
+    // للسماح باستدعاءات نفس النطاق مع منع wildcard
+    if ($originHost !== '' && $originHost === $siteHost) {
+        header('Access-Control-Allow-Origin: ' . $origin);
+    } else {
+        header('Access-Control-Allow-Origin: ' . SITE_URL);
+    }
+
+    header('Access-Control-Allow-Methods: ' . implode(', ', $allowedMethods));
+    header('Access-Control-Allow-Headers: Content-Type, Authorization, X-CSRF-Token');
+}
+
+/**
+ * فحص Origin/Referer ضد نفس نطاق النظام لتقليل مخاطر CSRF على API
+ * يسمح بطلبات بدون Origin/Referer للحفاظ على توافق العملاء غير المتصفحات.
+ */
+function validateApiOrigin(): bool {
+    $siteHost = extractHostFromUrl(SITE_URL);
+    if ($siteHost === '') {
+        return true;
+    }
+
+    $origin = trim((string)($_SERVER['HTTP_ORIGIN'] ?? ''));
+    $referer = trim((string)($_SERVER['HTTP_REFERER'] ?? ''));
+
+    // Clients مثل mobile/postman قد لا يرسلون Origin/Referer
+    if ($origin === '' && $referer === '') {
+        return true;
+    }
+
+    if ($origin !== '' && extractHostFromUrl($origin) !== $siteHost) {
+        return false;
+    }
+
+    if ($referer !== '' && extractHostFromUrl($referer) !== $siteHost) {
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * استجابة خطأ API موحدة مع الحفاظ على حقل message للتوافق القديم
+ */
+function apiError(string $message, int $code = 400, array $meta = []): void {
+    $response = [
+        'success' => false,
+        'message' => $message,
+        'error' => [
+            'message' => $message,
+            'code' => $code,
+        ],
+        'meta' => array_merge(['timestamp' => date('c')], $meta),
+    ];
+
+    jsonResponse($response, $code);
+}
+
+/**
+ * استجابة نجاح API موحدة مع الحفاظ على بنية النجاح القديمة
+ */
+function apiSuccess(array $data = [], int $code = 200, array $meta = []): void {
+    $response = array_merge(['success' => true], $data);
+    $response['meta'] = array_merge(['timestamp' => date('c')], $meta);
+    jsonResponse($response, $code);
 }
 
 /**
@@ -422,9 +558,20 @@ function assignTimeToShift(string $time, array $shifts): int {
 
 /**
  * جلب مواعيد الفرع من جدول الورديات (branch_shifts)
+ * @deprecated Use App\Services\ShiftService::getBranchSchedule() instead
  * يكتشف الوردية النشطة تلقائياً حسب الوقت
  */
 function getBranchSchedule(?int $branchId = null): array {
+    // Delegate to ShiftService if available
+    if (class_exists('\App\Services\ShiftService')) {
+        try {
+            $svc = new \App\Services\ShiftService();
+            return $svc->getBranchSchedule($branchId);
+        } catch (\Throwable $e) {
+            // Fall through to legacy implementation
+        }
+    }
+
     $defaults = [];
 
     if ($branchId) {
@@ -575,4 +722,265 @@ function svgIcon(string $name, int $size = 20): string {
     ];
     $p = $paths[$name] ?? '';
     return '<svg width="'.$size.'" height="'.$size.'" viewBox="0 0 24 24" fill="currentColor">'.$p.'</svg>';
+}
+
+// =============================================================
+// Web Push Notification (بدون مكتبة خارجية)
+// =============================================================
+
+/**
+ * إرسال إشعار push لموظف أو مجموعة موظفين
+ * @param array|int $employeeIds معرف/معرفات الموظفين
+ * @param string $title عنوان الإشعار
+ * @param string $body نص الإشعار
+ * @param array $extra بيانات إضافية (url, tag, actions)
+ * @return array نتيجة الإرسال
+ */
+function sendPushNotification($employeeIds, string $title, string $body, array $extra = []): array
+{
+    if (!is_array($employeeIds)) $employeeIds = [$employeeIds];
+    if (empty($employeeIds)) return ['sent' => 0, 'failed' => 0];
+
+    // جلب مفاتيح VAPID من الإعدادات
+    $vapidPublic  = getSystemSetting('vapid_public_key', '');
+    $vapidPrivate = getSystemSetting('vapid_private_key', '');
+    if (empty($vapidPublic) || empty($vapidPrivate)) {
+        return ['sent' => 0, 'failed' => 0, 'error' => 'VAPID keys not configured'];
+    }
+
+    // جلب الاشتراكات
+    $placeholders = implode(',', array_fill(0, count($employeeIds), '?'));
+    $stmt = db()->prepare("SELECT * FROM push_subscriptions WHERE employee_id IN ({$placeholders})");
+    $stmt->execute($employeeIds);
+    $subscriptions = $stmt->fetchAll();
+
+    if (empty($subscriptions)) return ['sent' => 0, 'failed' => 0];
+
+    $payload = json_encode([
+        'title'   => $title,
+        'body'    => $body,
+        'icon'    => $extra['icon'] ?? '/assets/images/loogo.png',
+        'badge'   => '/assets/images/loogo.png',
+        'tag'     => $extra['tag'] ?? 'sarh-' . time(),
+        'data'    => ['url' => $extra['url'] ?? '/employee/my-inbox.php'],
+        'vibrate' => [200, 100, 200, 100, 200],
+        'renotify'           => true,
+        'requireInteraction' => true,
+        'actions' => $extra['actions'] ?? [
+            ['action' => 'open', 'title' => 'فتح'],
+            ['action' => 'dismiss', 'title' => 'تجاهل']
+        ]
+    ], JSON_UNESCAPED_UNICODE);
+
+    $sent = 0;
+    $failed = 0;
+    $expiredEndpoints = [];
+
+    foreach ($subscriptions as $sub) {
+        $result = sendWebPush($sub['endpoint'], $sub['p256dh'], $sub['auth_key'], $payload, $vapidPublic, $vapidPrivate);
+        if ($result === true) {
+            $sent++;
+        } else {
+            $failed++;
+            // 404 أو 410 = الاشتراك انتهى
+            if (in_array($result, [404, 410])) {
+                $expiredEndpoints[] = $sub['endpoint'];
+            }
+        }
+    }
+
+    // حذف الاشتراكات المنتهية
+    if (!empty($expiredEndpoints)) {
+        $delPlaceholders = implode(',', array_fill(0, count($expiredEndpoints), '?'));
+        db()->prepare("DELETE FROM push_subscriptions WHERE endpoint IN ({$delPlaceholders})")
+            ->execute($expiredEndpoints);
+    }
+
+    return ['sent' => $sent, 'failed' => $failed];
+}
+
+/**
+ * إرسال Web Push باستخدام البروتوكول مباشرة
+ */
+function sendWebPush(string $endpoint, string $p256dh, string $authKey, string $payload, string $vapidPublic, string $vapidPrivate)
+{
+    $parsed = parse_url($endpoint);
+    $audience = $parsed['scheme'] . '://' . $parsed['host'];
+
+    // إنشاء JWT للمصادقة VAPID
+    $header = base64UrlEncode(json_encode(['typ' => 'JWT', 'alg' => 'ES256']));
+    $jwtPayload = base64UrlEncode(json_encode([
+        'aud' => $audience,
+        'exp' => time() + 43200,
+        'sub' => 'mailto:admin@sarh.io'
+    ]));
+
+    $signingInput = $header . '.' . $jwtPayload;
+
+    // تحويل المفتاح الخاص VAPID إلى PEM
+    $privateKeyDer = base64UrlDecode($vapidPrivate);
+    $pem = createEcPrivateKeyPem($privateKeyDer);
+    $privKey = openssl_pkey_get_private($pem);
+    if (!$privKey) return false;
+
+    openssl_sign($signingInput, $signature, $privKey, OPENSSL_ALGO_SHA256);
+    $signature = ecDerToRaw($signature);
+
+    $jwt = $signingInput . '.' . base64UrlEncode($signature);
+
+    // تشفير الحمولة (ECDH + HKDF + AESGCM)
+    $encrypted = encryptPushPayload($payload, $p256dh, $authKey);
+    if (!$encrypted) return false;
+
+    $headers = [
+        'Authorization: vapid t=' . $jwt . ', k=' . $vapidPublic,
+        'Content-Type: application/octet-stream',
+        'Content-Encoding: aes128gcm',
+        'Content-Length: ' . strlen($encrypted),
+        'TTL: 86400',
+        'Urgency: high',
+        'Topic: sarh-notification'
+    ];
+
+    $ch = curl_init($endpoint);
+    curl_setopt_array($ch, [
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => $encrypted,
+        CURLOPT_HTTPHEADER     => $headers,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 15,
+        CURLOPT_CONNECTTIMEOUT => 10,
+    ]);
+    curl_exec($ch);
+    $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($httpCode >= 200 && $httpCode < 300) return true;
+    return $httpCode;
+}
+
+/**
+ * تشفير حمولة Push بتشفير aes128gcm
+ */
+function encryptPushPayload(string $payload, string $userPublicKeyB64, string $userAuthB64): ?string
+{
+    $userPublicKey = base64UrlDecode($userPublicKeyB64);
+    $userAuth      = base64UrlDecode($userAuthB64);
+
+    // توليد مفتاح محلي ECDH
+    $localKey = openssl_pkey_new(['curve_name' => 'prime256v1', 'private_key_type' => OPENSSL_KEYTYPE_EC]);
+    if (!$localKey) return null;
+    $localDetails = openssl_pkey_get_details($localKey);
+    $localPublicKey = chr(4) . str_pad($localDetails['ec']['x'], 32, "\0", STR_PAD_LEFT) . str_pad($localDetails['ec']['y'], 32, "\0", STR_PAD_LEFT);
+
+    // ECDH shared secret
+    $sharedSecret = computeEcdhSecret($localKey, $userPublicKey);
+    if (!$sharedSecret) return null;
+
+    // salt عشوائي
+    $salt = random_bytes(16);
+
+    // HKDF
+    $ikm = hkdfExtract($userAuth, $sharedSecret);
+    $prk = hkdfExtract($salt, hkdfExpand($ikm, "WebPush: info\x00" . $userPublicKey . $localPublicKey, 32));
+    $contentKey = hkdfExpand($prk, "Content-Encoding: aes128gcm\x00", 16);
+    $nonce = hkdfExpand($prk, "Content-Encoding: nonce\x00", 12);
+
+    // RFC 8188: plaintext = content || 0x02 (delimiter for final record)
+    $paddedPayload = $payload . "\x02";
+
+    // AES-128-GCM
+    $tag = '';
+    $encrypted = openssl_encrypt($paddedPayload, 'aes-128-gcm', $contentKey, OPENSSL_RAW_DATA, $nonce, $tag, '', 16);
+    if ($encrypted === false) return null;
+
+    // aes128gcm header: salt(16) + rs(4) + idlen(1) + keyid(65)
+    $rs = pack('N', 4096);
+    $header = $salt . $rs . chr(65) . $localPublicKey;
+
+    $record = $encrypted . $tag;
+
+    return $header . $record;
+}
+
+function computeEcdhSecret($localPrivateKey, string $peerPublicKeyRaw): ?string
+{
+    // تحويل المفتاح العام للطرف الآخر إلى PEM
+    $peerPem = createEcPublicKeyPem($peerPublicKeyRaw);
+    $peerKey = openssl_pkey_get_public($peerPem);
+    if (!$peerKey) return null;
+
+    $shared = openssl_pkey_derive($peerKey, $localPrivateKey);
+    return $shared ?: null;
+}
+
+function createEcPublicKeyPem(string $rawPublicKey): string
+{
+    // ASN.1 header for P-256 uncompressed public key
+    $asn1Header = hex2bin('3059301306072a8648ce3d020106082a8648ce3d030107034200');
+    $der = $asn1Header . $rawPublicKey;
+    return "-----BEGIN PUBLIC KEY-----\n" . chunk_split(base64_encode($der), 64) . "-----END PUBLIC KEY-----\n";
+}
+
+function createEcPrivateKeyPem(string $rawPrivateKey): string
+{
+    // PKCS#8 format for EC P-256 private key (32 bytes)
+    $asn1 =
+        "\x30\x41" .                                     // SEQUENCE
+        "\x02\x01\x00" .                                 // version 0
+        "\x30\x13" .                                     // SEQUENCE (AlgorithmIdentifier)
+        "\x06\x07\x2a\x86\x48\xce\x3d\x02\x01" .       // OID ecPublicKey
+        "\x06\x08\x2a\x86\x48\xce\x3d\x03\x01\x07" .   // OID P-256
+        "\x04\x27" .                                     // OCTET STRING wrapper
+        "\x30\x25" .                                     // inner SEQUENCE
+        "\x02\x01\x01" .                                 // version 1
+        "\x04\x20" . $rawPrivateKey;                     // private key (32 bytes)
+
+    return "-----BEGIN PRIVATE KEY-----\n" . chunk_split(base64_encode($asn1), 64) . "-----END PRIVATE KEY-----\n";
+}
+
+function ecDerToRaw(string $derSignature): string
+{
+    // تحويل توقيع DER إلى r||s (64 bytes)
+    $offset = 3;
+    $rLen = ord($derSignature[$offset]);
+    $offset++;
+    $r = substr($derSignature, $offset, $rLen);
+    $offset += $rLen + 1;
+    $sLen = ord($derSignature[$offset]);
+    $offset++;
+    $s = substr($derSignature, $offset, $sLen);
+
+    $r = ltrim($r, "\x00");
+    $s = ltrim($s, "\x00");
+    $r = str_pad($r, 32, "\x00", STR_PAD_LEFT);
+    $s = str_pad($s, 32, "\x00", STR_PAD_LEFT);
+
+    return $r . $s;
+}
+
+function base64UrlEncode(string $data): string
+{
+    return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
+}
+
+function base64UrlDecode(string $data): string
+{
+    return base64_decode(strtr($data, '-_', '+/') . str_repeat('=', (4 - strlen($data) % 4) % 4));
+}
+
+function hkdfExtract(string $salt, string $ikm): string
+{
+    return hash_hmac('sha256', $ikm, $salt, true);
+}
+
+function hkdfExpand(string $prk, string $info, int $length): string
+{
+    $t = '';
+    $lastBlock = '';
+    for ($i = 1; strlen($t) < $length; $i++) {
+        $lastBlock = hash_hmac('sha256', $lastBlock . $info . chr($i), $prk, true);
+        $t .= $lastBlock;
+    }
+    return substr($t, 0, $length);
 }

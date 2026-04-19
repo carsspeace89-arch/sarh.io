@@ -1,4 +1,5 @@
-<?php
+﻿<?php
+// ⛔ LEGACY — DO NOT EXTEND | All new code must go to src/* or api/v1/*
 // api/get-group-files.php — يعيد ملفات مجموعة وثائق واحدة (للمدير فقط)
 require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/auth.php';

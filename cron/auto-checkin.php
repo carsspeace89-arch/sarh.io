@@ -18,10 +18,20 @@ require_once __DIR__ . '/../includes/functions.php';
 // لو غير CLI، منع التشغيل إلا برمز سري
 $cronSecret = $_ENV['CRON_SECRET'] ?? getenv('CRON_SECRET') ?: '';
 if (php_sapi_name() !== 'cli') {
-    if (empty($cronSecret) || !isset($_GET['secret']) || !hash_equals($cronSecret, $_GET['secret'])) {
+    // Use Authorization header or POST body instead of GET to prevent log exposure
+    $providedSecret = $_SERVER['HTTP_X_CRON_SECRET'] ?? $_POST['secret'] ?? $_GET['secret'] ?? '';
+    if (empty($cronSecret) || !hash_equals($cronSecret, $providedSecret)) {
         http_response_code(403);
         exit('Access denied');
     }
+}
+
+// File lock to prevent concurrent execution
+$lockFile = sys_get_temp_dir() . '/sarh_auto_checkin.lock';
+$lockFp = fopen($lockFile, 'c');
+if (!$lockFp || !flock($lockFp, LOCK_EX | LOCK_NB)) {
+    echo date('Y-m-d H:i:s') . " - Auto check-in already running, skipping\n";
+    exit;
 }
 
 $today = date('Y-m-d');
@@ -142,3 +152,9 @@ try {
 }
 
 echo date('Y-m-d H:i:s') . " - Auto check-in done: {$autoCheckins} checked in, {$skipped} skipped\n";
+
+// Release lock
+if (isset($lockFp) && is_resource($lockFp)) {
+    flock($lockFp, LOCK_UN);
+    fclose($lockFp);
+}

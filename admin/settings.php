@@ -53,6 +53,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $message = 'تم حفظ معايير الحضور'; $msgType = 'success';
         }
 
+        if ($action === 'generate_vapid') {
+            // توليد مفاتيح VAPID
+            $key = openssl_pkey_new(['curve_name' => 'prime256v1', 'private_key_type' => OPENSSL_KEYTYPE_EC]);
+            if ($key) {
+                $details = openssl_pkey_get_details($key);
+                $publicKeyRaw = chr(4) . str_pad($details['ec']['x'], 32, "\0", STR_PAD_LEFT) . str_pad($details['ec']['y'], 32, "\0", STR_PAD_LEFT);
+                $privateKeyRaw = str_pad($details['ec']['d'], 32, "\0", STR_PAD_LEFT);
+                setSystemSetting('vapid_public_key', base64UrlEncode($publicKeyRaw));
+                setSystemSetting('vapid_private_key', base64UrlEncode($privateKeyRaw));
+                auditLog('vapid_generate', 'تم توليد مفاتيح VAPID جديدة');
+                $message = 'تم توليد مفاتيح VAPID بنجاح — الإشعارات الفورية جاهزة الآن'; $msgType = 'success';
+            } else {
+                $message = 'فشل في توليد المفاتيح: ' . openssl_error_string(); $msgType = 'error';
+            }
+        }
+
         if ($action === 'change_password') {
             $current = $_POST['current_password'] ?? '';
             $new     = $_POST['new_password']     ?? '';
@@ -207,7 +223,7 @@ require_once __DIR__ . '/../includes/admin_layout.php';
 </style>
 
 <?php if ($message): ?>
-<div class="alert alert-<?= $msgType === 'success' ? 'success' : 'error' ?>"><?= $message ?></div>
+<div class="alert alert-<?= $msgType === 'success' ? 'success' : 'error' ?>"><?= htmlspecialchars($message, ENT_QUOTES, 'UTF-8') ?></div>
 <?php endif; ?>
 
 <!-- التبويبات -->
@@ -216,6 +232,7 @@ require_once __DIR__ . '/../includes/admin_layout.php';
     <button class="tab-btn" onclick="showTab('time')">أوقات الدوام</button>
     <button class="tab-btn" onclick="showTab('attendance')">معايير الحضور</button>
     <button class="tab-btn" onclick="showTab('general')">إعدادات عامة</button>
+    <button class="tab-btn" onclick="showTab('push')">🔔 إشعارات Push</button>
     <button class="tab-btn" onclick="showTab('password')">كلمة المرور</button>
 </div>
 
@@ -422,6 +439,62 @@ require_once __DIR__ . '/../includes/admin_layout.php';
 
             <button type="submit" class="btn btn-primary">حفظ المعايير</button>
         </form>
+    </div>
+</div>
+
+<!-- =================== إعدادات Push Notifications =================== -->
+<div class="tab-content" id="tab-push">
+    <div class="card">
+        <div class="card-header"><span class="card-title"><span class="card-title-bar"></span> 🔔 إشعارات Push Notifications</span></div>
+
+        <?php
+        $vapidPublicKey = getSystemSetting('vapid_public_key', '');
+        $vapidConfigured = !empty($vapidPublicKey) && !empty(getSystemSetting('vapid_private_key', ''));
+        $subCount = 0;
+        try { $subCount = (int)db()->query("SELECT COUNT(*) FROM push_subscriptions")->fetchColumn(); } catch(Exception $e) {}
+        ?>
+
+        <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px">
+            <div style="flex:1;min-width:200px;background:<?= $vapidConfigured ? 'linear-gradient(135deg,#D1FAE5,#A7F3D0)' : 'linear-gradient(135deg,#FEE2E2,#FECACA)' ?>;padding:16px;border-radius:12px">
+                <div style="font-size:.82rem;color:<?= $vapidConfigured ? '#065F46' : '#991B1B' ?>;font-weight:600">حالة مفاتيح VAPID</div>
+                <div style="font-size:1.4rem;font-weight:800;color:<?= $vapidConfigured ? '#059669' : '#DC2626' ?>"><?= $vapidConfigured ? '✅ مُفعّلة' : '❌ غير مُفعّلة' ?></div>
+            </div>
+            <div style="flex:1;min-width:200px;background:linear-gradient(135deg,#DBEAFE,#BFDBFE);padding:16px;border-radius:12px">
+                <div style="font-size:.82rem;color:#1E40AF;font-weight:600">الأجهزة المشتركة</div>
+                <div style="font-size:1.4rem;font-weight:800;color:#2563EB"><?= $subCount ?> جهاز</div>
+            </div>
+        </div>
+
+        <?php if (!$vapidConfigured): ?>
+            <div class="scope-note" style="background:linear-gradient(135deg,#FEF2F2,#FEE2E2);border-color:#FCA5A5">
+                <span style="color:#991B1B">
+                    ⚠️ <strong>مفاتيح VAPID غير موجودة!</strong> يجب توليد المفاتيح لتفعيل إشعارات Push.
+                    بدونها لن يتمكن التطبيق من إيقاظ أجهزة الموظفين عند وجود إشعارات جديدة.
+                </span>
+            </div>
+            <form method="POST">
+                <input type="hidden" name="csrf_token" value="<?= $csrf ?>">
+                <input type="hidden" name="action" value="generate_vapid">
+                <button type="submit" class="btn btn-primary" style="font-size:1rem;padding:12px 32px">
+                    🔑 توليد مفاتيح VAPID الآن
+                </button>
+            </form>
+        <?php else: ?>
+            <div class="scope-note">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="#D97706"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+                <span>إشعارات Push مُفعّلة. عندما يرسل المدير رسالة عبر صندوق الوارد أو ينشر إعلان، سيتلقى الموظفون إشعاراً فورياً حتى لو كان التطبيق مغلقاً.</span>
+            </div>
+            <div class="form-group">
+                <label class="form-label">المفتاح العام (VAPID Public Key)</label>
+                <input class="form-control" type="text" value="<?= htmlspecialchars($vapidPublicKey) ?>" readonly style="direction:ltr;font-family:monospace;font-size:.8rem">
+            </div>
+            <hr style="border-color:var(--border);margin:20px 0">
+            <form method="POST" onsubmit="return confirm('تحذير: توليد مفاتيح جديدة سيلغي جميع الاشتراكات الحالية. هل أنت متأكد؟')">
+                <input type="hidden" name="csrf_token" value="<?= $csrf ?>">
+                <input type="hidden" name="action" value="generate_vapid">
+                <button type="submit" class="btn btn-secondary" style="font-size:.85rem">🔄 إعادة توليد المفاتيح (حذر)</button>
+            </form>
+        <?php endif; ?>
     </div>
 </div>
 

@@ -1,4 +1,5 @@
-<?php
+﻿<?php
+// ⛔ LEGACY — DO NOT EXTEND | All new code must go to src/* or api/v1/*
 // =============================================================
 // api/auth-device.php — مصادقة الموظف عبر بصمة الجهاز
 // إذا كان الجهاز مربوطاً بموظف → يُرجع بيانات الموظف مباشرة
@@ -8,32 +9,39 @@ require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/rate_limiter.php';
 
-header('Content-Type: application/json; charset=utf-8');
-header('Access-Control-Allow-Origin: ' . SITE_URL);
-header('Access-Control-Allow-Methods: POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
+setupApiHeaders(['POST', 'OPTIONS']);
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(204);
     exit;
 }
 
-// Rate Limiting: 20 طلب/دقيقة لكل IP
-if (isRateLimited(20, 60, 'auth_device')) { rateLimitResponse(); }
+if (!validateApiOrigin()) {
+    apiError('Origin غير مسموح', 403);
+}
+
+// Rate Limiting: Redis-first, file-based fallback
+if (class_exists('\App\Middleware\RedisRateLimiter')) {
+    $rl = new \App\Middleware\RedisRateLimiter();
+    $check = $rl->checkByIP('auth_device', 20, 60);
+    if (!$check['allowed']) { $rl->denyResponse($check['retry_after']); }
+} elseif (isRateLimited(20, 60, 'auth_device')) {
+    rateLimitResponse();
+}
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    jsonResponse(['success' => false, 'message' => 'طريقة طلب غير مسموحة'], 405);
+    apiError('طريقة طلب غير مسموحة', 405);
 }
 
 $body = json_decode(file_get_contents('php://input'), true);
 if (!$body) {
-    jsonResponse(['success' => false, 'message' => 'بيانات غير صالحة'], 400);
+    apiError('بيانات غير صالحة', 400);
 }
 
 $fingerprint = trim($body['fingerprint'] ?? '');
 
 if (empty($fingerprint) || strlen($fingerprint) < 32) {
-    jsonResponse(['success' => false, 'message' => 'بصمة الجهاز غير صالحة'], 400);
+    apiError('بصمة الجهاز غير صالحة', 400);
 }
 
 // البحث عن موظف مربوط بهذا الجهاز (ربط صارم أو مراقبة)
@@ -50,10 +58,10 @@ $stmt->execute([$fingerprint]);
 $employee = $stmt->fetch();
 
 if (!$employee) {
-    jsonResponse(['success' => false, 'message' => 'الجهاز غير مربوط بأي موظف']);
+    apiError('الجهاز غير مربوط بأي موظف', 404);
 }
 
-jsonResponse([
+apiSuccess([
     'success'        => true,
     'bound'          => true,
     'token'          => $employee['unique_token'],

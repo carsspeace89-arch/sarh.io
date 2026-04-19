@@ -1,10 +1,16 @@
-<?php
+﻿<?php
+// ⛔ LEGACY — DO NOT EXTEND | All new code must go to src/* or api/v1/*
 // =============================================================
 // api/serve-file.php — عرض ملفات البروفايل بشكل آمن
 // =============================================================
 require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/functions.php';
+
+// إغلاق الجلسة مبكراً لمنع قفل الملف أثناء تقديم الصورة
+if (session_status() === PHP_SESSION_ACTIVE) {
+    session_write_close();
+}
 
 $relPath = trim($_GET['f'] ?? '');
 
@@ -13,8 +19,16 @@ if (
     empty($relPath) ||
     str_contains($relPath, '..') ||
     str_contains($relPath, "\0") ||
-    !preg_match('#^profiles/\d+/#', $relPath)
+    str_contains($relPath, '%') ||
+    !preg_match('#^profiles/\d+/[a-zA-Z0-9._\-]+$#', $relPath)
 ) {
+    http_response_code(403); exit;
+}
+
+// Double-check with realpath to prevent any encoded traversal
+$basePath = realpath(dirname(__DIR__) . '/storage/uploads');
+$resolvedPath = realpath($basePath . '/' . $relPath);
+if ($resolvedPath === false || !str_starts_with($resolvedPath, $basePath . DIRECTORY_SEPARATOR)) {
     http_response_code(403); exit;
 }
 
@@ -36,8 +50,8 @@ if (isAdminLoggedIn()) {
 
 if (!$authorized) { http_response_code(403); exit; }
 
-$fullPath = dirname(__DIR__) . '/storage/uploads/' . $relPath;
-if (!file_exists($fullPath) || !is_file($fullPath)) { http_response_code(404); exit; }
+$fullPath = $resolvedPath;
+if (!is_file($fullPath)) { http_response_code(404); exit; }
 
 // التحقق من نوع MIME الفعلي (ليس الامتداد)
 $finfo    = new finfo(FILEINFO_MIME_TYPE);

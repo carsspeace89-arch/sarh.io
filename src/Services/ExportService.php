@@ -17,13 +17,10 @@ class ExportService
     }
 
     /**
-     * تصدير CSV
+     * تصدير CSV (streamed with chunked pagination)
      */
     public function exportCsv(array $filters, string $filename = 'attendance_report.csv'): void
     {
-        $result = $this->attendance->getFilteredReport($filters, 1, 100000);
-        $records = $result['data'];
-
         $safeName = preg_replace('/[^a-zA-Z0-9_\-.]/', '_', $filename);
         header('Content-Type: text/csv; charset=utf-8');
         header("Content-Disposition: attachment; filename=\"{$safeName}\"");
@@ -41,40 +38,70 @@ class ExportService
             'out' => 'انصراف',
         ];
 
-        foreach ($records as $r) {
-            fputcsv($output, [
-                $r['employee_name'],
-                $r['job_title'],
-                $r['branch_name'] ?? '-',
-                $typeLabels[$r['type']] ?? $r['type'],
-                date('Y-m-d', strtotime($r['timestamp'])),
-                date('H:i:s', strtotime($r['timestamp'])),
-                $r['late_minutes'] ?? 0,
-                $r['latitude'],
-                $r['longitude'],
-            ]);
-        }
+        $page = 1;
+        $chunkSize = 1000;
+        do {
+            $result = $this->attendance->getFilteredReport($filters, $page, $chunkSize);
+            $records = $result['data'];
+
+            foreach ($records as $r) {
+                fputcsv($output, [
+                    $r['employee_name'],
+                    $r['job_title'],
+                    $r['branch_name'] ?? '-',
+                    $typeLabels[$r['type']] ?? $r['type'],
+                    date('Y-m-d', strtotime($r['timestamp'])),
+                    date('H:i:s', strtotime($r['timestamp'])),
+                    $r['late_minutes'] ?? 0,
+                    $r['latitude'],
+                    $r['longitude'],
+                ]);
+            }
+
+            if (ob_get_level()) ob_flush();
+            flush();
+            $page++;
+        } while (count($records) === $chunkSize);
 
         fclose($output);
         exit;
     }
 
     /**
-     * تصدير JSON
+     * تصدير JSON (streamed with chunked pagination)
      */
     public function exportJson(array $filters, string $filename = 'attendance_report.json'): void
     {
-        $result = $this->attendance->getFilteredReport($filters, 1, 100000);
         $safeName = preg_replace('/[^a-zA-Z0-9_\-.]/', '_', $filename);
 
         header('Content-Type: application/json; charset=utf-8');
         header("Content-Disposition: attachment; filename=\"{$safeName}\"");
 
-        echo json_encode([
-            'generated_at' => date('Y-m-d H:i:s'),
-            'total_records' => $result['total'],
-            'data' => $result['data'],
-        ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+        // Get total count from first page
+        $firstResult = $this->attendance->getFilteredReport($filters, 1, 1);
+        $total = $firstResult['total'];
+
+        echo '{"generated_at":"' . date('Y-m-d H:i:s') . '","total_records":' . $total . ',"data":[';
+
+        $page = 1;
+        $chunkSize = 1000;
+        $first = true;
+        do {
+            $result = $this->attendance->getFilteredReport($filters, $page, $chunkSize);
+            $records = $result['data'];
+
+            foreach ($records as $r) {
+                if (!$first) echo ',';
+                echo json_encode($r, JSON_UNESCAPED_UNICODE);
+                $first = false;
+            }
+
+            if (ob_get_level()) ob_flush();
+            flush();
+            $page++;
+        } while (count($records) === $chunkSize);
+
+        echo ']}';
         exit;
     }
 
@@ -84,9 +111,6 @@ class ExportService
      */
     public function exportExcel(array $filters, string $filename = 'attendance_report.xlsx'): void
     {
-        $result = $this->attendance->getFilteredReport($filters, 1, 100000);
-        $records = $result['data'];
-
         $typeLabels = [
             'in' => 'حضور',
             'out' => 'انصراف',
@@ -130,22 +154,33 @@ class ExportService
         }
         echo '</Row>' . "\n";
 
-        // Data rows
-        foreach ($records as $r) {
-            $late = (int)($r['late_minutes'] ?? 0);
-            $style = $late > 0 ? ' ss:StyleID="late"' : ' ss:StyleID="default"';
-            echo '<Row>' . "\n";
-            echo '<Cell ss:StyleID="default"><Data ss:Type="String">' . htmlspecialchars($r['employee_name']) . '</Data></Cell>' . "\n";
-            echo '<Cell ss:StyleID="default"><Data ss:Type="String">' . htmlspecialchars($r['job_title'] ?? '') . '</Data></Cell>' . "\n";
-            echo '<Cell ss:StyleID="default"><Data ss:Type="String">' . htmlspecialchars($r['branch_name'] ?? '-') . '</Data></Cell>' . "\n";
-            echo '<Cell ss:StyleID="default"><Data ss:Type="String">' . ($typeLabels[$r['type']] ?? $r['type']) . '</Data></Cell>' . "\n";
-            echo '<Cell ss:StyleID="default"><Data ss:Type="String">' . date('Y-m-d', strtotime($r['timestamp'])) . '</Data></Cell>' . "\n";
-            echo '<Cell ss:StyleID="default"><Data ss:Type="String">' . date('H:i:s', strtotime($r['timestamp'])) . '</Data></Cell>' . "\n";
-            echo "<Cell{$style}><Data ss:Type=\"Number\">{$late}</Data></Cell>\n";
-            echo '<Cell ss:StyleID="default"><Data ss:Type="Number">' . ($r['latitude'] ?? 0) . '</Data></Cell>' . "\n";
-            echo '<Cell ss:StyleID="default"><Data ss:Type="Number">' . ($r['longitude'] ?? 0) . '</Data></Cell>' . "\n";
-            echo '</Row>' . "\n";
-        }
+        // Data rows (chunked)
+        $page = 1;
+        $chunkSize = 1000;
+        do {
+            $result = $this->attendance->getFilteredReport($filters, $page, $chunkSize);
+            $records = $result['data'];
+
+            foreach ($records as $r) {
+                $late = (int)($r['late_minutes'] ?? 0);
+                $style = $late > 0 ? ' ss:StyleID="late"' : ' ss:StyleID="default"';
+                echo '<Row>' . "\n";
+                echo '<Cell ss:StyleID="default"><Data ss:Type="String">' . htmlspecialchars($r['employee_name']) . '</Data></Cell>' . "\n";
+                echo '<Cell ss:StyleID="default"><Data ss:Type="String">' . htmlspecialchars($r['job_title'] ?? '') . '</Data></Cell>' . "\n";
+                echo '<Cell ss:StyleID="default"><Data ss:Type="String">' . htmlspecialchars($r['branch_name'] ?? '-') . '</Data></Cell>' . "\n";
+                echo '<Cell ss:StyleID="default"><Data ss:Type="String">' . ($typeLabels[$r['type']] ?? $r['type']) . '</Data></Cell>' . "\n";
+                echo '<Cell ss:StyleID="default"><Data ss:Type="String">' . date('Y-m-d', strtotime($r['timestamp'])) . '</Data></Cell>' . "\n";
+                echo '<Cell ss:StyleID="default"><Data ss:Type="String">' . date('H:i:s', strtotime($r['timestamp'])) . '</Data></Cell>' . "\n";
+                echo "<Cell{$style}><Data ss:Type=\"Number\">{$late}</Data></Cell>\n";
+                echo '<Cell ss:StyleID="default"><Data ss:Type="Number">' . ($r['latitude'] ?? 0) . '</Data></Cell>' . "\n";
+                echo '<Cell ss:StyleID="default"><Data ss:Type="Number">' . ($r['longitude'] ?? 0) . '</Data></Cell>' . "\n";
+                echo '</Row>' . "\n";
+            }
+
+            if (ob_get_level()) ob_flush();
+            flush();
+            $page++;
+        } while (count($records) === $chunkSize);
 
         echo '</Table></Worksheet></Workbook>';
         exit;
@@ -193,9 +228,6 @@ class ExportService
      */
     public function exportAttendancePrintable(array $filters, string $title = 'تقرير الحضور'): void
     {
-        $result = $this->attendance->getFilteredReport($filters, 1, 100000);
-        $records = $result['data'];
-
         $dateRange = '';
         if (!empty($filters['date_from']) && !empty($filters['date_to'])) {
             $dateRange = $filters['date_from'] . ' إلى ' . $filters['date_to'];
@@ -206,28 +238,43 @@ class ExportService
             'out' => 'انصراف',
         ];
 
-        echo $this->exportPrintable($records, $title, $dateRange);
+        echo $this->exportPrintable([], $title, $dateRange);
 
         echo '<table><thead><tr>';
         echo '<th>#</th><th>الموظف</th><th>الفرع</th><th>النوع</th><th>التاريخ</th><th>الوقت</th><th>التأخير</th>';
         echo '</tr></thead><tbody>';
 
-        foreach ($records as $i => $r) {
-            $late = (int)($r['late_minutes'] ?? 0);
-            $lateClass = $late > 0 ? ' class="late"' : '';
-            echo '<tr>';
-            echo '<td>' . ($i + 1) . '</td>';
-            echo '<td>' . htmlspecialchars($r['employee_name']) . '</td>';
-            echo '<td>' . htmlspecialchars($r['branch_name'] ?? '-') . '</td>';
-            echo '<td>' . ($typeLabels[$r['type']] ?? $r['type']) . '</td>';
-            echo '<td>' . date('Y-m-d', strtotime($r['timestamp'])) . '</td>';
-            echo '<td>' . date('H:i', strtotime($r['timestamp'])) . '</td>';
-            echo "<td{$lateClass}>" . ($late > 0 ? $late . ' دقيقة' : '-') . '</td>';
-            echo '</tr>';
-        }
+        $page = 1;
+        $chunkSize = 1000;
+        $rowNum = 0;
+        $totalRecords = 0;
+        do {
+            $result = $this->attendance->getFilteredReport($filters, $page, $chunkSize);
+            $records = $result['data'];
+            $totalRecords = $result['total'];
+
+            foreach ($records as $r) {
+                $rowNum++;
+                $late = (int)($r['late_minutes'] ?? 0);
+                $lateClass = $late > 0 ? ' class="late"' : '';
+                echo '<tr>';
+                echo '<td>' . $rowNum . '</td>';
+                echo '<td>' . htmlspecialchars($r['employee_name']) . '</td>';
+                echo '<td>' . htmlspecialchars($r['branch_name'] ?? '-') . '</td>';
+                echo '<td>' . ($typeLabels[$r['type']] ?? $r['type']) . '</td>';
+                echo '<td>' . date('Y-m-d', strtotime($r['timestamp'])) . '</td>';
+                echo '<td>' . date('H:i', strtotime($r['timestamp'])) . '</td>';
+                echo "<td{$lateClass}>" . ($late > 0 ? $late . ' دقيقة' : '-') . '</td>';
+                echo '</tr>';
+            }
+
+            if (ob_get_level()) ob_flush();
+            flush();
+            $page++;
+        } while (count($records) === $chunkSize);
 
         echo '</tbody></table>';
-        echo '<div class="footer"><span>عدد السجلات: ' . count($records) . '</span><span>' . date('Y-m-d H:i') . '</span></div>';
+        echo '<div class="footer"><span>عدد السجلات: ' . $totalRecords . '</span><span>' . date('Y-m-d H:i') . '</span></div>';
         echo '</body></html>';
         exit;
     }

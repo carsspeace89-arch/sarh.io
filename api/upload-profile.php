@@ -1,4 +1,5 @@
-<?php
+﻿<?php
+// ⛔ LEGACY — DO NOT EXTEND | All new code must go to src/* or api/v1/*
 // =============================================================
 // api/upload-profile.php — رفع صورة بروفايل أو وثيقة موظف
 // =============================================================
@@ -45,9 +46,26 @@ if ($action === 'photo') {
     $file  = $_FILES['file'];
     $finfo = new finfo(FILEINFO_MIME_TYPE);
     $mime  = $finfo->file($file['tmp_name']);
-    if (!in_array($mime, ['image/jpeg', 'image/png', 'image/webp'], true)) {
+    
+    // Strict whitelist of allowed image MIME types
+    $allowedImageMimes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!in_array($mime, $allowedImageMimes, true)) {
         echo json_encode(['success' => false, 'message' => 'صيغة غير مدعومة — jpg/png/webp فقط', 'csrf_token' => $newCsrf]); exit;
     }
+    
+    // Additional security: verify file extension matches MIME type
+    $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+    $allowedExts = ['jpg', 'jpeg', 'png', 'webp'];
+    if (!in_array($ext, $allowedExts, true)) {
+        echo json_encode(['success' => false, 'message' => 'امتداد ملف غير صالح', 'csrf_token' => $newCsrf]); exit;
+    }
+    
+    // Prevent PHP/executable uploads disguised as images
+    $filename = basename($file['name']);
+    if (preg_match('/\.(php|phtml|php3|php4|php5|pht|phar|sh|py|pl|cgi|exe)$/i', $filename)) {
+        echo json_encode(['success' => false, 'message' => 'نوع ملف محظور', 'csrf_token' => $newCsrf]); exit;
+    }
+    
     if ($file['size'] > 5 * 1024 * 1024) {
         echo json_encode(['success' => false, 'message' => 'الحجم أكبر من 5 ميجا', 'csrf_token' => $newCsrf]); exit;
     }

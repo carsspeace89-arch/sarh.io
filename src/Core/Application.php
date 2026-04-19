@@ -40,9 +40,14 @@ class Application
             return Database::getInstance();
         });
 
-        // Cache
+        // Cache (file-based legacy)
         $this->container->singleton(\App\Services\CacheService::class, function () {
             return new \App\Services\CacheService($this->basePath . '/storage/cache');
+        });
+
+        // Redis Cache (primary)
+        $this->container->singleton(\App\Services\RedisCacheService::class, function () {
+            return \App\Services\RedisCacheService::getInstance();
         });
 
         // Auth
@@ -50,14 +55,31 @@ class Application
             return new \App\Services\AuthService();
         });
 
-        // Attendance
-        $this->container->singleton(\App\Services\AttendanceService::class, function () {
-            return new \App\Services\AttendanceService();
+        // Shift Service
+        $this->container->singleton(\App\Services\ShiftService::class, function () {
+            return new \App\Services\ShiftService(
+                $this->container->make(\App\Services\RedisCacheService::class)
+            );
         });
 
-        // Geofence
+        // Geofence (hardened with risk scoring)
         $this->container->singleton(\App\Services\GeofenceService::class, function () {
-            return new \App\Services\GeofenceService();
+            return new \App\Services\GeofenceService(
+                $this->container->make(\App\Services\RedisCacheService::class)
+            );
+        });
+
+        // Attendance
+        $this->container->singleton(\App\Services\AttendanceService::class, function () {
+            return new \App\Services\AttendanceService(
+                $this->container->make(\App\Services\ShiftService::class),
+                $this->container->make(\App\Services\GeofenceService::class)
+            );
+        });
+
+        // WhatsApp
+        $this->container->singleton(\App\Services\WhatsAppService::class, function () {
+            return \App\Services\WhatsAppService::getInstance();
         });
 
         // Export
@@ -65,7 +87,12 @@ class Application
             return new \App\Services\ExportService();
         });
 
-        // Rate Limiter
+        // Redis Rate Limiter
+        $this->container->singleton(\App\Middleware\RedisRateLimiter::class, function () {
+            return new \App\Middleware\RedisRateLimiter();
+        });
+
+        // Legacy Rate Limiter (backward compatibility)
         $this->container->singleton(\App\Middleware\RateLimiter::class, function () {
             return new \App\Middleware\RateLimiter();
         });
@@ -73,6 +100,11 @@ class Application
         // Session Timeout
         $this->container->singleton(\App\Middleware\SessionTimeout::class, function () {
             return new \App\Middleware\SessionTimeout(30);
+        });
+
+        // Queue Manager
+        $this->container->singleton(\App\Queue\QueueManager::class, function () {
+            return \App\Queue\QueueManager::getInstance();
         });
     }
 

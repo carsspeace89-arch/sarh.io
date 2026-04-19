@@ -1,34 +1,43 @@
-<?php
+﻿<?php
+// ⛔ LEGACY — DO NOT EXTEND | All new code must go to src/* or api/v1/*
 // =============================================================
 // api/check-in.php - API تسجيل الدخول
+// =============================================================
+// Backward-compatible wrapper. New clients should use /api/v1/attendance/check-in
 // =============================================================
 
 require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/rate_limiter.php';
 
-header('Content-Type: application/json; charset=utf-8');
+setupApiHeaders(['POST', 'OPTIONS']);
 
-// Rate Limiting: 30 طلب/دقيقة لكل IP
-if (isRateLimited(30, 60, 'checkin')) { rateLimitResponse(); }
-header('Access-Control-Allow-Origin: ' . SITE_URL);
-header('Access-Control-Allow-Methods: POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
-
+// Rate Limiting: Redis-first, file-based fallback
+if (class_exists('\App\Middleware\RedisRateLimiter')) {
+    $rl = new \App\Middleware\RedisRateLimiter();
+    $check = $rl->checkByIP('checkin', 30, 60);
+    if (!$check['allowed']) { $rl->denyResponse($check['retry_after']); }
+} elseif (isRateLimited(30, 60, 'checkin')) {
+    rateLimitResponse();
+}
 // Handle CORS preflight
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(204);
     exit;
 }
 
+if (!validateApiOrigin()) {
+    apiError('Origin غير مسموح', 403);
+}
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    jsonResponse(['success' => false, 'message' => 'طريقة طلب غير مسموحة'], 405);
+    apiError('طريقة طلب غير مسموحة', 405);
 }
 
 // قراءة جسم الطلب JSON
 $body = json_decode(file_get_contents('php://input'), true);
 if (!$body) {
-    jsonResponse(['success' => false, 'message' => 'بيانات غير صالحة'], 400);
+    apiError('بيانات غير صالحة', 400);
 }
 
 $token    = trim($body['token']    ?? '');
@@ -38,16 +47,20 @@ $accuracy = (float) ($body['accuracy']  ?? 0);
 
 // التحقق من البيانات
 if (empty($token)) {
-    jsonResponse(['success' => false, 'message' => 'الرمز المميز مطلوب'], 400);
+    apiError('الرمز المميز مطلوب', 400);
 }
 if ($lat === 0.0 && $lon === 0.0) {
-    jsonResponse(['success' => false, 'message' => 'بيانات الموقع غير صالحة'], 400);
+    apiError('بيانات الموقع غير صالحة', 400);
+}
+// GPS coordinate range validation
+if ($lat < -90 || $lat > 90 || $lon < -180 || $lon > 180) {
+    apiError('إحداثيات الموقع خارج النطاق الصالح', 400);
 }
 
 // التحقق من صحة الـ token
 $employee = getEmployeeByToken($token);
 if (!$employee) {
-    jsonResponse(['success' => false, 'message' => 'رمز غير صالح أو الموظف غير مفعّل'], 403);
+    apiError('رمز غير صالح أو الموظف غير مفعّل', 403);
 }
 
 // التحقق من أن التسجيل ضمن نافذة الوردية (قبل بدء الوردية بساعة حتى نهايتها)
@@ -68,10 +81,7 @@ if ($workEnd < $earlyStart) {
 }
 
 if ($outsideWindow) {
-    jsonResponse([
-        'success' => false,
-        'message' => "تسجيل الحضور متاح من {$earlyStart} إلى {$workEnd}. الوقت الحالي: {$nowTime}"
-    ], 200);
+    apiError("تسجيل الحضور متاح من {$earlyStart} إلى {$workEnd}. الوقت الحالي: {$nowTime}", 200);
 }
 
 // التحقق من النطاق الجغرافي (باستخدام فرع الموظف إن وجد)
@@ -81,19 +91,30 @@ if (!empty($employee['bypass_geofence'])) {
 } else {
     $geoCheck = isWithinGeofence($lat, $lon, $employee['branch_id'] ?? null);
     if (!$geoCheck['allowed']) {
-        jsonResponse([
-            'success'  => false,
-            'message'  => "⛔ لا يمكن تسجيل الحضور من خارج نطاق العمل.\n\n📍 المسافة الحالية: {$geoCheck['distance']} متر\n📏 الحد المسموح: {$geoCheck['radius']} متر\n\nيرجى التوجه إلى مقر العمل والمحاولة مجدداً.",
-            'distance' => $geoCheck['distance'],
-            'radius'   => $geoCheck['radius']
-        ], 200);
+        apiError(
+            "⛔ لا يمكن تسجيل الحضور من خارج نطاق العمل.\n\n📍 المسافة الحالية: {$geoCheck['distance']} متر\n📏 الحد المسموح: {$geoCheck['radius']} متر\n\nيرجى التوجه إلى مقر العمل والمحاولة مجدداً.",
+            200,
+            [
+                'distance' => $geoCheck['distance'],
+                'radius' => $geoCheck['radius'],
+            ]
+        );
     }
 }
 
 // تسجيل الدخول
 $result = recordAttendance($employee['id'], 'in', $lat, $lon, $accuracy);
 
-jsonResponse(array_merge($result, [
+// Structured logging
+if (class_exists('\App\Core\Logger')) {
+    \App\Core\Logger::api('check-in', [
+        'employee_id' => $employee['id'],
+        'success' => $result['success'],
+        'distance' => $geoCheck['distance'] ?? 0,
+    ]);
+}
+
+apiSuccess(array_merge($result, [
     'employee_name' => $employee['name'],
     'timestamp'     => date('Y-m-d H:i:s'),
     'distance'      => $geoCheck['distance'] ?? 0

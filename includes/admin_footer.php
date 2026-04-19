@@ -1,4 +1,5 @@
 <?php
+// ⛔ LEGACY — DO NOT EXTEND | All new code must go to src/* or api/v1/*
 // =============================================================
 // includes/admin_footer.php - التذييل المشترك لصفحات الإدارة (v4.0)
 // =============================================================
@@ -35,19 +36,8 @@ if (typeof SessionManager !== 'undefined') {
 })();
 
 // Clock
-function tick(){
-    const el = document.getElementById('topbarClock');
-    if(el) el.textContent = new Date().toLocaleString('ar-SA');
-}
-tick();
-setInterval(tick, 1000);
-
-// Sidebar Toggle
-function toggleSidebar(){
-    document.getElementById('sidebar')?.classList.toggle('open');
-    document.getElementById('sidebarOverlay')?.classList.toggle('show');
-}
-document.getElementById('sidebarOverlay')?.addEventListener('click', toggleSidebar);
+// Note: Clock, Sidebar Toggle, Nav Group Toggle, and localStorage restore
+// are now embedded in admin_layout.php for guaranteed loading on all pages.
 
 // Notification Badge
 function updateNotifBadge() {
