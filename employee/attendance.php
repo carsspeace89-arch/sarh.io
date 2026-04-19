@@ -8,6 +8,7 @@ header('Alt-Svc: clear');
 
 require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/mandatory_interrogation.php';
 
 $token    = trim($_GET['token'] ?? '');
 $employee = null;
@@ -21,6 +22,19 @@ if (empty($token)) {
   $employee = getEmployeeByToken($token);
   if (!$employee) {
     $error = 'expired_link';
+  } else {
+    mi_ensure_tables();
+    $blocking = mi_get_blocking_assignment((int)$employee['id']);
+    if ($blocking) {
+      $todayInStmt = db()->prepare("SELECT id FROM attendances WHERE employee_id = ? AND attendance_date = CURDATE() AND type = 'in' LIMIT 1");
+      $todayInStmt->execute([(int)$employee['id']]);
+      $alreadyCheckedInToday = (bool)$todayInStmt->fetch();
+
+      if (!$alreadyCheckedInToday) {
+        header('Location: ' . SITE_URL . '/employee/mandatory-interrogation.php?token=' . urlencode($token));
+        exit;
+      }
+    }
   }
 }
 

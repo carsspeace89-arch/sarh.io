@@ -180,6 +180,14 @@ function submitAttendance(token, type, lat, lon, accuracy) {
             // تحديث الصفحة بعد ثانيتين
             setTimeout(() => location.reload(), 2500);
         } else {
+            if (data?.meta?.requires_mandatory_interrogation && data?.meta?.mandatory_interrogation_url) {
+                showMessage('error', '⛔ يوجد استجواب إلزامي. سيتم تحويلك الآن.');
+                setTimeout(() => {
+                    window.location.href = data.meta.mandatory_interrogation_url;
+                }, 1200);
+                return;
+            }
+
             showMessage('error', '❌ ' + data.message);
             if (btnIn)  btnIn.disabled  = false;
             if (btnOut) btnOut.disabled = false;

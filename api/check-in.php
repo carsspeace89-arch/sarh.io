@@ -9,6 +9,7 @@
 require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/rate_limiter.php';
+require_once __DIR__ . '/../includes/mandatory_interrogation.php';
 
 setupApiHeaders(['POST', 'OPTIONS']);
 
@@ -61,6 +62,24 @@ if ($lat < -90 || $lat > 90 || $lon < -180 || $lon > 180) {
 $employee = getEmployeeByToken($token);
 if (!$employee) {
     apiError('رمز غير صالح أو الموظف غير مفعّل', 403);
+}
+
+mi_ensure_tables();
+$blocking = mi_get_blocking_assignment((int)$employee['id']);
+if ($blocking) {
+    $statusLabelMap = [
+        'pending' => 'لم يتم إرسال الاستجواب بعد',
+        'submitted' => 'تم إرسال الاستجواب وبانتظار مراجعة الإدارة',
+        'rejected' => 'تم طلب استجواب إضافي من الإدارة',
+    ];
+    $statusLabel = $statusLabelMap[$blocking['status']] ?? 'يوجد استجواب إلزامي مفتوح';
+
+    apiError('لا يمكن تسجيل الحضور حالياً. ' . $statusLabel . '.', 200, [
+        'requires_mandatory_interrogation' => true,
+        'mandatory_interrogation_url' => SITE_URL . '/employee/mandatory-interrogation.php?token=' . urlencode($token),
+        'assignment_id' => (int)$blocking['id'],
+        'assignment_status' => $blocking['status'],
+    ]);
 }
 
 // التحقق من أن التسجيل ضمن نافذة الوردية (قبل بدء الوردية بساعة حتى نهايتها)
